@@ -17,7 +17,8 @@ const carStr = (o) => [o.brand, o.model].filter(Boolean).join(' ') + (o.plate ? 
 const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const METHODS = { cash: 'Наличные', card: 'Карта', transfer: 'Перевод' };
-const ROLES = { admin: 'Администратор', manager: 'Менеджер', master: 'Мастер' };
+const ROLES = { admin: 'Администратор', senior: 'Руководитель-мастер', manager: 'Менеджер', master: 'Мастер' };
+const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
 const SOURCES = ['Рекомендация', 'Авито', 'Яндекс Карты', '2ГИС', 'ВКонтакте', 'Telegram', 'Instagram', 'Сайт', 'Проезжал мимо', 'Постоянный клиент'];
 const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Прочее'];
@@ -69,7 +70,8 @@ function opts(list, cur, empty) {
   return (empty !== undefined ? `<option value="">${esc(empty)}</option>` : '') +
     list.map((x) => { const [v, t] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}" ${String(v) === String(cur ?? '') ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
 }
-const masters = () => S.staff.filter((u) => u.role === 'master' || u.role === 'admin');
+const masters = () => S.staff.filter((u) => u.can_work || u.role === 'admin');
+const canWork = () => myRole() === 'master' || myRole() === 'senior';
 
 // ================= Модальные окна =================
 function modal(title, body, { submit = 'Сохранить', wide = false, onSubmit, footer, onOpen } = {}) {
@@ -150,6 +152,7 @@ const ICONS = {
   salary: I('<circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .9-3 2s1 1.7 3 2 3 1 3 2.1-1.3 2-3 2c-1.4 0-2.6-.6-3-1.6M12 6.5V8M12 16v1.5"/>'),
   users: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/>'),
   settings: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  partners: I('<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6M8 10h.01M12 10h.01M16 10h.01"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
 };
 
@@ -162,6 +165,7 @@ const NAV = [
   ['/leads', 'Заявки', 'leads', 'office'],
   ['/stock', 'Склад', 'stock', 'office'],
   ['/services', 'Услуги и цены', 'services', 'office'],
+  ['/contractors', 'Контрагенты', 'partners', 'office'],
   ['/finance', 'Финансы', 'money', 'office'],
   ['/salary', 'Зарплата', 'salary', 'all'],
   ['/users', 'Сотрудники', 'users', 'admin'],
@@ -175,7 +179,7 @@ function renderShell() {
   <div class="app"><aside class="side" id="side">
     <div class="logo"><div class="mark">Б</div><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
     <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : ''}</a>`).join('')}</nav>
-    <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[u.role]}</div>
+    <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div></div>
   </aside><main class="main" id="page"></main></div>`;
   $('#logout').onclick = async () => { await POST('/api/logout'); S.me = null; renderLogin(); };
@@ -251,6 +255,8 @@ async function boot() {
   navigate();
 }
 
+let CACHE_CONTR = null;
+async function contractorsList(force) { if (!CACHE_CONTR || force) CACHE_CONTR = await GET('/api/contractors'); return CACHE_CONTR; }
 async function services() { if (!S.services) S.services = await GET('/api/services'); return S.services; }
 
 // ================= Главная =================
@@ -270,8 +276,8 @@ route(/^\/$/, async (page) => {
     ${['scheduled', 'in_work', 'waiting', 'done'].map((s) => `<a class="kpi" href="#/orders?status=${s}" style="color:inherit;text-decoration:none"><div class="l">${S.me.statuses[s]}</div><div class="v">${stCounts[s] || 0}</div></a>`).join('')}
   </div>
   <div class="grid g-main"><div>
-    <div class="card"><h2>Записи на сегодня</h2>${d.today.length ? `<div class="list">${d.today.map((o) => `
-      <div class="li click" data-o="${o.id}"><div class="time">${o.scheduled_at.slice(11, 16)}</div><div class="grow"><div class="t">${esc(o.client)} <span class="muted small">${esc(o.phone || '')}</span></div>
+    <div class="card"><h2>На постах сегодня</h2>${d.today.length ? `<div class="list">${d.today.map((o) => `
+      <div class="li click" data-o="${o.id}"><div class="time">${o.scheduled_at.slice(0, 10) === today() ? o.scheduled_at.slice(11, 16) : '<span class="small">с ' + dmy(o.scheduled_at).slice(0, 5) + '</span>'}</div><div class="grow"><div class="t">${esc(o.client)} <span class="muted small">${esc(o.phone || '')}</span></div>
       <div class="s">${esc(carStr(o))}${o.bay ? ' · ' + esc(o.bay) : ''}${o.master ? ' · ' + esc(o.master) : ''}</div></div>${stBadge(o.status)}</div>`).join('')}</div>` : '<div class="empty">На сегодня записей нет</div>'}</div>
     <div class="card"><h2>В работе</h2>${d.in_work.length ? `<div class="list">${d.in_work.map((o) => `
       <div class="li click" data-o="${o.id}"><div class="grow"><div class="t">${orderNo(o.id)} · ${esc(o.client)}</div><div class="s">${esc(carStr(o))}${o.master ? ' · ' + esc(o.master) : ''}</div></div>${stBadge(o.status)}</div>`).join('')}</div>` : '<div class="empty">Нет автомобилей в работе</div>'}</div>
@@ -304,12 +310,13 @@ async function newOrderModal(pre = {}) {
       <div class="field"><label>Госномер</label><input name="car_plate"></div><div class="field"><label>Год</label><input name="car_year" type="number" min="1950" max="2100"></div></div>
     <div class="row">
       <div class="field"><label>Дата и время записи</label><input type="datetime-local" name="scheduled_at" value="${esc(pre.scheduled_at || '')}" step="900"></div>
+      <div class="field"><label>Стоит на посту до (включительно)</label><input type="date" name="end_date" value="${esc(pre.end_date || '')}"></div>
       <div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${pre.duration_h || 2}" step="0.5" min="0.5"></div>
-      <div class="field"><label>Бокс</label><select name="bay">${opts(bays, pre.bay, '—')}</select></div>
+      <div class="field"><label>Пост</label><select name="bay">${opts(bays, pre.bay, '—')}</select></div>
       <div class="field"><label>Мастер</label><select name="master_id">${opts(masters().map((u) => [u.id, u.name]), pre.master_id, '—')}</select></div></div>
     <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>`,
   { wide: true, submit: 'Создать заказ', onSubmit: async (d) => {
-    const body = { client_id: d.client_id || null, lead_id: d.lead_id || null, car_id: d.car_id || null, scheduled_at: d.scheduled_at || null,
+    const body = { client_id: d.client_id || null, lead_id: d.lead_id || null, car_id: d.car_id || null, scheduled_at: d.scheduled_at || null, end_date: d.end_date || null,
       duration_min: Math.round((+d.duration_h || 2) * 60), bay: d.bay, master_id: d.master_id, complaint: d.complaint };
     if (!body.client_id) {
       if (!d.nc_name) { toast('Выберите клиента или заполните нового', true); return false; }
@@ -370,9 +377,49 @@ route(/^\/orders$/, async (page, query) => {
   await load();
 });
 
+// ---------- Приёмка автомобиля ----------
+function acceptCard(o, office) {
+  const L = S.me.accept_lists; const a = o.accept || { kit: [], works: [] };
+  const dis = office ? '' : 'disabled';
+  const checks = (name, items, sel) => `<div class="checkgrid">${items.map((t) => `<label class="ck"><input type="checkbox" name="${name}" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''} ${dis}> ${esc(t)}</label>`).join('')}</div>`;
+  return `<form class="card" id="acc"><div class="inline" style="margin-bottom:6px"><h2 style="margin:0;flex:1">Приёмка автомобиля</h2>
+    ${o.accept_at ? `<span class="badge ok">принят ${dt(o.accept_at)}</span>` : '<span class="badge warn">не оформлена</span>'}</div>
+    <div class="row"><div class="field"><label>Дата и время приёмки</label><input type="datetime-local" name="accept_at" value="${esc(o.accept_at || '')}" ${dis}></div>
+    <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${dis}></div></div>
+    <div class="field"><label>Топливо</label><div class="chips">${L.fuel.map((f) => `<label class="chip ${o.accept_fuel === f ? 'on' : ''}"><input type="radio" name="accept_fuel" value="${f}" ${o.accept_fuel === f ? 'checked' : ''} ${dis} hidden>${f}</label>`).join('')}</div></div>
+    <details ${o.accept_at ? '' : 'open'}><summary class="muted" style="cursor:pointer;margin-bottom:6px">Комплектность и исправность систем</summary>
+    <label>Комплектность</label>${checks('kit', L.kit, a.kit)}
+    <label style="margin-top:8px">Работает при приёмке</label>${checks('works', L.works, a.works)}</details>
+    <div class="field" style="margin-top:8px"><label>Повреждения, сколы, царапины</label><textarea name="accept_damage" rows="2" ${dis} placeholder="Напр.: скол на капоте, царапина на заднем бампере справа">${esc(o.accept_damage || '')}</textarea></div>
+    <div class="field"><label>Личные вещи в салоне</label><input name="accept_items" value="${esc(o.accept_items || '')}" ${dis} placeholder="Детское кресло, зарядка…"></div>
+    ${office ? `<div class="inline"><button class="primary sm">${o.accept_at ? 'Сохранить' : 'Принять в работу'}</button><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Печать акта</a></div>` : ''}
+  </form>`;
+}
+function bindAccept(page, o, reload) {
+  const f = $('#acc', page); if (!f) return;
+  $$('input[name=accept_fuel]', f).forEach((r) => r.addEventListener('change', () => $$('.chip', f).forEach((c) => c.classList.toggle('on', $('input', c).checked))));
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+      accept_at: f.accept_at.value || null, mileage: f.mileage.value,
+      accept_fuel: ($('input[name=accept_fuel]:checked', f) || {}).value || null,
+      kit: $$('input[name=kit]:checked', f).map((x) => x.value), works: $$('input[name=works]:checked', f).map((x) => x.value),
+      accept_damage: f.accept_damage.value, accept_items: f.accept_items.value,
+    };
+    try {
+      await PUT(`/api/orders/${o.id}/accept`, body);
+      if (!o.accept_at && ['new', 'scheduled'].includes(o.status)) await POST(`/api/orders/${o.id}/status`, { status: 'in_work' });
+      toast(o.accept_at ? 'Приёмка сохранена' : 'Автомобиль принят в работу');
+      if (!o.accept_at) window.open(`/print/order/${o.id}/accept`, '_blank');
+      reload();
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
 route(/^\/orders\/(\d+)$/, async (page, id) => {
   const o = await GET('/api/orders/' + id);
   const office = isOffice();
+  const contrs = office ? await contractorsList() : [];
   const statusButtons = (role() === 'master' ? ['in_work', 'waiting', 'done'] : Object.keys(S.me.statuses));
   const t = o.totals;
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
@@ -387,7 +434,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const issuedLocked = o.status === 'issued';
 
   page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>Заказ ${o.number}</h1>${stBadge(o.status)}<div class="sp"></div>
-    ${office ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a></div>` : ''}</div>
+    ${office ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a></div>` : ''}</div>
   <div class="card" style="margin-bottom:14px"><h3>Статус</h3><div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>
     ${o.status === 'done' && office && t.due > 0.5 ? `<div class="small" style="margin-top:8px;color:var(--warn)">Перед выдачей примите оплату: к оплате ${rub(t.due)}</div>` : ''}</div>
   <div class="grid g-main"><div>
@@ -403,22 +450,26 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div><span class="muted">Товары</span><span class="mono">${rub(t.goods)}</span></div>
       <div><span class="muted">Скидка</span><span class="inline"><input type="number" id="disc" value="${o.discount_percent || 0}" min="0" max="100" step="any" style="width:70px;padding:3px 6px"> %  <span class="mono">−${rub(t.discount)}</span></span></div>
       <div class="big"><span>Итого</span><span class="mono">${rub(t.total)}</span></div>
+      ${o.cashless_markup ? `<div class="small"><span class="muted">Безнал (+${o.cashless_markup}%)</span><span class="mono muted">${rub(t.total * (1 + o.cashless_markup / 100))}</span></div>` : ''}
       <div><span class="muted">Оплачено</span><span class="mono">${rub(t.paid)}</span></div>
       <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
       <div style="margin-top:10px;gap:8px;justify-content:flex-end"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
     </div>
     ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}</div>` : ''}
   </div><div>
-    <div class="card"><h2>Клиент и автомобиль</h2>
+    <div class="card"><h2>Клиент и автомобиль</h2>${o.contractor_name ? `<div class="field"><span class="badge">🤝 ${esc(o.contractor_name)}</span></div>` : ''}
       <div class="field"><b>${o.client_id && office ? `<a href="#/clients/${o.client_id}">${esc(o.client_name)}</a>` : esc(o.client_name || '—')}</b>
       ${o.client_phone ? `<div><a href="tel:${esc(o.client_phone)}">${esc(o.client_phone)}</a></div>` : ''}</div>
       <div class="field"><div>${esc([o.brand, o.model, o.year].filter(Boolean).join(' ') || '—')}</div>
       <div class="muted small">${o.plate ? 'Госномер ' + esc(o.plate) : ''}${o.vin ? ' · VIN ' + esc(o.vin) : ''}${o.color ? ' · ' + esc(o.color) : ''}</div></div>
     </div>
+    ${acceptCard(o, office)}
     <form class="card" id="of"><h2>Детали</h2>
-      <div class="field"><label>Запись</label><input type="datetime-local" name="scheduled_at" value="${esc(o.scheduled_at || '')}" step="900" ${office ? '' : 'disabled'}></div>
+      <div class="row"><div class="field"><label>Запись (начало)</label><input type="datetime-local" name="scheduled_at" value="${esc(o.scheduled_at || '')}" step="900" ${office ? '' : 'disabled'}></div>
+      <div class="field"><label>На посту до</label><input type="date" name="end_date" value="${esc(o.end_date || '')}" ${office ? '' : 'disabled'}></div></div>
       <div class="row"><div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${(o.duration_min || 120) / 60}" step="0.5" min="0.5" ${office ? '' : 'disabled'}></div>
-      <div class="field"><label>Бокс</label><select name="bay" ${office ? '' : 'disabled'}>${opts(S.me.bays, o.bay, '—')}</select></div></div>
+      <div class="field"><label>Пост</label><select name="bay" ${office ? '' : 'disabled'}>${opts(S.me.bays, o.bay, '—')}</select></div></div>
+      ${office ? `<div class="field"><label>Контрагент (партнёр / плательщик)</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name]), o.contractor_id, '— частный клиент —')}</select></div>` : ''}
       <div class="row"><div class="field"><label>Мастер</label><select name="master_id" ${office ? '' : 'disabled'}>${opts(masters().map((u) => [u.id, u.name]), o.master_id, '—')}</select></div>
       <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${office ? '' : 'disabled'}></div></div>
       <div class="field"><label>Пожелания клиента</label><textarea name="complaint" ${office ? '' : 'disabled'}>${esc(o.complaint || '')}</textarea></div>
@@ -450,6 +501,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     d.duration_min = Math.round((+d.duration_h || 2) * 60); delete d.duration_h;
     try { await PUT('/api/orders/' + o.id, d); toast('Сохранено'); reload(); } catch (err) { toast(err.message, true); }
   };
+  bindAccept(page, o, reload);
   // inline-редактирование позиций
   $$('tr[data-item]', page).forEach((tr) => {
     $$('[data-f]', tr).forEach((inp) => inp.addEventListener('change', async () => {
@@ -500,53 +552,101 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
 });
 
 // ================= Календарь =================
+// Цвета как в Excel-журнале студии
+const ST_COLOR = { new: '#ea9999', scheduled: '#93c47d', in_work: '#6fbf5a', waiting: '#ff9900', done: '#9fc5e8', issued: '#b7b7b7' };
+const ST_HINT = { new: 'предварительно / не подтверждено' };
+const NOTE_COLORS = [['#ffe599', 'Жёлтый'], ['#93c47d', 'Зелёный'], ['#ea9999', 'Красный'], ['#ff9900', 'Оранжевый'], ['#9fc5e8', 'Голубой'], ['#b7b7b7', 'Серый'], ['#ffffff', 'Белый']];
+
+function noteModal(n, onDone) {
+  const isNew = !n.id;
+  modal(isNew ? 'Заметка в журнал' : 'Заметка', `
+    <div class="small muted" style="margin-bottom:8px">${dmy(n.date)}${n.bay ? ' · ' + esc(n.bay) : ' · на весь день'}</div>
+    <div class="field"><label>Текст</label><textarea name="text" rows="4" required placeholder="Напр.: Сергей отсутствует / Предварительно: Camry 50, сабвуфер, 8-9xx…">${esc(n.text || '')}</textarea></div>
+    <div class="field"><label>Цвет</label><div class="chips">${NOTE_COLORS.map(([c, t]) => `<label class="chip swatch ${(n.color || '#ffe599') === c ? 'on' : ''}" title="${t}" style="--sw:${c}"><input type="radio" name="color" value="${c}" hidden ${(n.color || '#ffe599') === c ? 'checked' : ''}><i></i></label>`).join('')}</div></div>
+    <div class="row"><div class="field"><label>Пост</label><select name="bay">${opts(S.me.bays, n.bay, '— на весь день —')}</select></div>
+    ${isNew ? '<div class="field"><label>Сколько дней подряд</label><input type="number" name="days" value="1" min="1" max="60"></div>' : ''}</div>`,
+  { footer: !isNew ? '<button type="button" class="ghost danger" data-deln style="margin-right:auto">Удалить</button><button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>' : undefined,
+    onSubmit: async (d) => { if (isNew) await POST('/api/cal-notes', { ...d, date: n.date }); else await PUT('/api/cal-notes/' + n.id, d); onDone(); },
+    onOpen: (f, close) => {
+      $$('input[name=color]', f).forEach((r) => r.addEventListener('change', () => $$('.swatch', f).forEach((c) => c.classList.toggle('on', $('input', c).checked))));
+      const b = $('[data-deln]', f); if (b) b.onclick = async () => { await DEL('/api/cal-notes/' + n.id); close(); onDone(); };
+    } });
+}
+
 route(/^\/calendar$/, async (page, query) => {
-  let date = query.d || today();
-  let view = query.v || (window.innerWidth < 860 ? 'week' : 'day');
+  const monday = (ds) => { const d = new Date(ds + 'T00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return ymd(d); };
+  let view = query.v || 'journal';
+  let date = query.d || (view === 'journal' ? monday(today()) : today());
+  const DAYS = 14;
   const [ws, we] = [S.me.work_start, S.me.work_end].map((t) => +t.split(':')[0] + (+t.split(':')[1] || 0) / 60);
   const SLOT = 28; // px на 30 минут
   const render = async () => {
     const d = new Date(date + 'T00:00');
     let from = date, to = date;
-    if (view === 'week') { const st = new Date(d); st.setDate(d.getDate() - ((d.getDay() + 6) % 7)); from = ymd(st); const en = new Date(st); en.setDate(st.getDate() + 6); to = ymd(en); }
-    const rows = await GET('/api/calendar' + qs({ from, to }));
+    if (view === 'journal') { const en = new Date(d); en.setDate(d.getDate() + DAYS - 1); to = ymd(en); }
+    const data = await GET('/api/calendar' + qs({ from, to, format: 'journal' }));
+    const rows = data.orders, notes = data.notes;
     const title = view === 'day' ? `${DOW[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}` : `${dmy(from)} — ${dmy(to)}`;
-    page.innerHTML = `<div class="topbar"><h1>Календарь</h1><div class="inline"><button id="prev">‹</button><button id="tod">Сегодня</button><button id="next">›</button></div>
+    page.innerHTML = `<div class="topbar"><h1>${view === 'journal' ? 'Журнал записи' : 'Календарь'}</h1><div class="inline"><button id="prev">‹</button><button id="tod">Сегодня</button><button id="next">›</button></div>
       <b style="font-size:16px">${title}</b><div class="sp"></div><input type="date" id="pick" value="${date}" style="width:auto">
-      <div class="chips"><button class="chip ${view === 'day' ? 'on' : ''}" data-v="day">День</button><button class="chip ${view === 'week' ? 'on' : ''}" data-v="week">Неделя</button></div></div><div id="cal"></div>`;
+      <div class="chips"><button class="chip ${view === 'journal' ? 'on' : ''}" data-v="journal">Журнал</button><button class="chip ${view === 'day' ? 'on' : ''}" data-v="day">По часам</button></div></div>
+      ${view === 'journal' ? `<div class="legend" style="margin:-6px 0 10px">${Object.entries(ST_COLOR).map(([k, c]) => `<span><i style="background:${c}"></i>${S.me.statuses[k]}${ST_HINT[k] ? ' (' + ST_HINT[k] + ')' : ''}</span>`).join('')}<span><i style="background:#ffe599"></i>Заметка</span></div>` : ''}
+      <div id="cal"></div>`;
     const box = $('#cal', page);
-    if (view === 'day') {
+    if (view === 'journal') {
+      const posts = S.me.bays.length ? S.me.bays : ['Пост 1'];
+      const noBay = rows.some((r) => !posts.includes(r.bay));
+      const cols = [...posts, ...(noBay ? ['Без поста'] : []), ''];
+      const days = []; for (let i = 0; i < DAYS; i++) { const x = new Date(d); x.setDate(d.getDate() + i); days.push(ymd(x)); }
+      const inCol = (bay, c) => (c === 'Без поста' ? !posts.includes(bay) : c === '' ? false : bay === c);
+      const orderCard = (r, ds) => {
+        const start = r.scheduled_at.slice(0, 10), end = r.end_date || start;
+        const first = ds === start || ds === from;
+        const total = Math.round((new Date(end) - new Date(start)) / 864e5) + 1;
+        const n = Math.round((new Date(ds) - new Date(start)) / 864e5) + 1;
+        return `<div class="jc" data-id="${r.id}" style="--c:${ST_COLOR[r.status] || '#93c47d'}"><b>${esc([r.brand, r.model].filter(Boolean).join(' ') || r.client || orderNo(r.id))}</b>${ds === start ? ` <span class="jt">${r.scheduled_at.slice(11, 16)}</span>` : ''}${total > 1 ? ` <span class="jt">${n}/${total} дн.</span>` : ''}
+          ${first ? `${r.complaint ? `<div class="jx">${esc(r.complaint)}</div>` : ''}<div class="jx">${esc(r.client || '')} ${esc(r.phone || '')}</div>${r.master ? `<div class="jx">👷 ${esc(r.master)}</div>` : ''}` : ''}</div>`;
+      };
+      const noteCard = (n) => `<div class="jc note" data-note="${n.id}" style="--c:${n.color || '#ffe599'}">${esc(n.text)}</div>`;
+      box.innerHTML = `<div class="jwrap"><table class="jr"><thead><tr><th class="jd">Дата</th>${cols.map((c) => `<th>${c ? esc(c) : 'Заметки дня'}</th>`).join('')}</tr></thead><tbody>
+        ${days.map((ds) => { const x = new Date(ds + 'T00:00'); const we2 = x.getDay() === 0 || x.getDay() === 6;
+          return `<tr class="${ds === today() ? 'today' : ''} ${we2 ? 'we' : ''}"><td class="jd"><b>${pad(x.getDate())}.${pad(x.getMonth() + 1)}</b><div>${DOW[x.getDay()]}</div></td>
+          ${cols.map((c) => `<td class="jcell" data-d="${ds}" data-bay="${esc(c === 'Без поста' ? '' : c)}">${rows.filter((r) => inCol(r.bay, c) && r.scheduled_at.slice(0, 10) <= ds && (r.end_date || r.scheduled_at.slice(0, 10)) >= ds).map((r) => orderCard(r, ds)).join('')}${notes.filter((n) => n.date === ds && (c === '' ? !n.bay : n.bay === c)).map(noteCard).join('')}</td>`).join('')}</tr>`; }).join('')}
+        </tbody></table></div>`;
+      const reloadJ = () => render();
+      $$('[data-note]', box).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); if (!isOffice()) return; const n = notes.find((x) => x.id === +e.dataset.note); noteModal(n, reloadJ); }));
+      if (isOffice()) $$('.jcell', box).forEach((td) => (td.onclick = () => {
+        const ds = td.dataset.d, bay = td.dataset.bay;
+        const m = modal(`${dmy(ds)}${bay ? ' · ' + bay : ''}`, '<div class="grid" style="gap:10px"><button type="button" class="primary" data-a="o" style="justify-content:center;padding:12px">🚗 Записать автомобиль</button><button type="button" data-a="n" style="justify-content:center;padding:12px">📝 Заметка в ячейку</button></div>', { footer: '<button type="button" data-x>Отмена</button>' });
+        $('[data-a=o]', m.el).onclick = () => { m.close(); newOrderModal({ scheduled_at: `${ds}T11:00`, bay }); };
+        $('[data-a=n]', m.el).onclick = () => { m.close(); noteModal({ date: ds, bay }, reloadJ); };
+      }));
+    } else {
+      const rows2 = rows.filter((r) => r.scheduled_at.slice(0, 10) === date);
       const cols = S.me.bays.length ? S.me.bays : ['Запись'];
-      const unassigned = rows.filter((r) => !r.bay || !cols.includes(r.bay));
-      const allCols = unassigned.length ? [...cols, 'Без бокса'] : cols;
+      const unassigned = rows2.filter((r) => !r.bay || !cols.includes(r.bay));
+      const allCols = unassigned.length ? [...cols, 'Без поста'] : cols;
       const hours = []; for (let h = Math.floor(ws); h < Math.ceil(we); h++) hours.push(h);
       const pos = (s) => { const [hh, mm] = s.slice(11, 16).split(':').map(Number); return ((hh + mm / 60) - Math.floor(ws)) * 2 * SLOT; };
       box.innerHTML = `<div class="cal" style="grid-template-columns:56px repeat(${allCols.length}, minmax(140px,1fr))">
         <div class="hcol"><div class="colh"></div>${hours.map((h) => `<div class="hl">${pad(h)}:00</div>`).join('')}</div>
         ${allCols.map((c) => `<div class="col"><div class="colh">${esc(c)}</div><div class="cbody" style="position:relative">
           ${hours.map((h) => `<div class="slot" data-t="${pad(h)}:00" data-bay="${esc(c)}"></div><div class="slot hr" data-t="${pad(h)}:30" data-bay="${esc(c)}"></div>`).join('')}
-          ${rows.filter((r) => (c === 'Без бокса' ? unassigned.includes(r) : r.bay === c)).map((r) => `<div class="ev st-${r.status}" data-id="${r.id}" style="top:${pos(r.scheduled_at)}px;height:${Math.max((r.duration_min || 60) / 30 * SLOT - 3, 24)}px">
+          ${rows2.filter((r) => (c === 'Без поста' ? unassigned.includes(r) : r.bay === c)).map((r) => `<div class="ev st-${r.status}" data-id="${r.id}" style="top:${pos(r.scheduled_at)}px;height:${Math.max((r.duration_min || 60) / 30 * SLOT - 3, 24)}px">
             <b>${r.scheduled_at.slice(11, 16)} ${esc(r.client || '')}</b>${esc(carStr(r))}${r.master ? `<div class="muted">${esc(r.master)}</div>` : ''}${r.complaint ? `<div class="muted">${esc(r.complaint)}</div>` : ''}</div>`).join('')}
         </div></div>`).join('')}</div>`;
       if (date === today()) {
         const n = new Date(); const top = ((n.getHours() + n.getMinutes() / 60) - Math.floor(ws)) * 2 * SLOT;
         if (top > 0 && top < hours.length * 2 * SLOT) $$('.cbody', box).forEach((c) => c.insertAdjacentHTML('beforeend', `<div class="now" style="top:${top}px"></div>`));
       }
-      if (isOffice()) $$('.slot', box).forEach((s) => (s.onclick = () => newOrderModal({ scheduled_at: `${date}T${s.dataset.t}`, bay: s.dataset.bay === 'Без бокса' ? '' : s.dataset.bay })));
-    } else {
-      const st = new Date(from + 'T00:00'); const days = [];
-      for (let i = 0; i < 7; i++) { const x = new Date(st); x.setDate(st.getDate() + i); days.push(ymd(x)); }
-      box.innerHTML = `<div class="week">${days.map((ds) => { const x = new Date(ds + 'T00:00'); const list = rows.filter((r) => r.scheduled_at.slice(0, 10) === ds);
-        return `<div class="day ${ds === today() ? 'today' : ''}"><div class="dh" data-d="${ds}"><span>${DOW[x.getDay()]} ${x.getDate()}.${pad(x.getMonth() + 1)}</span><span class="muted small">${list.length || ''}</span></div>
-        ${list.map((r) => `<div class="wev st-${r.status}" data-id="${r.id}" style="border-left-color:var(--${{ in_work: 'accent', done: 'ok', waiting: 'warn', issued: 'violet' }[r.status] || 'info'})"><b>${r.scheduled_at.slice(11, 16)}</b> ${esc(r.client || '')}<div class="muted">${esc(carStr(r))}${r.bay ? ' · ' + esc(r.bay) : ''}</div></div>`).join('') || '<div class="muted small">—</div>'}</div>`; }).join('')}</div>`;
-      $$('.dh', box).forEach((h) => (h.onclick = () => { date = h.dataset.d; view = 'day'; render(); }));
+      if (isOffice()) $$('.slot', box).forEach((s) => (s.onclick = () => newOrderModal({ scheduled_at: `${date}T${s.dataset.t}`, bay: s.dataset.bay === 'Без поста' ? '' : s.dataset.bay })));
     }
     $$('[data-id]', box).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); go('/orders/' + e.dataset.id); }));
-    const shift = (n) => { const x = new Date(date + 'T00:00'); x.setDate(x.getDate() + n * (view === 'week' ? 7 : 1)); date = ymd(x); render(); };
+    const shift = (n) => { const x = new Date(date + 'T00:00'); x.setDate(x.getDate() + n * (view === 'journal' ? 7 : 1)); date = ymd(x); render(); };
     $('#prev', page).onclick = () => shift(-1); $('#next', page).onclick = () => shift(1);
-    $('#tod', page).onclick = () => { date = today(); render(); };
-    $('#pick', page).onchange = (e) => { if (e.target.value) { date = e.target.value; render(); } };
-    $$('[data-v]', page).forEach((b) => (b.onclick = () => { view = b.dataset.v; render(); }));
+    $('#tod', page).onclick = () => { date = view === 'journal' ? monday(today()) : today(); render(); };
+    $('#pick', page).onchange = (e) => { if (e.target.value) { date = view === 'journal' ? monday(e.target.value) : e.target.value; render(); } };
+    $$('[data-v]', page).forEach((b) => (b.onclick = () => { view = b.dataset.v; date = view === 'journal' ? monday(date) : (date <= today() && today() <= ymd(new Date(new Date(date).getTime() + 13 * 864e5)) ? today() : date); render(); }));
   };
   await render();
 });
@@ -683,22 +783,49 @@ route(/^\/leads$/, async (page) => {
 
 // ================= Склад =================
 route(/^\/stock$/, async (page) => {
-  let low = false;
+  let low = false, scope = 'stock', cat = '';
   page.innerHTML = `<div class="topbar"><h1>Склад</h1><span class="muted" id="sum"></span><div class="sp"></div>
-    <input class="search" id="q" placeholder="Название, артикул, бренд"><button class="chip" id="low">Заканчиваются</button>
-    <button id="moves">Движения</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
+    <input class="search" id="q" placeholder="Название, артикул, бренд">
+    <button id="moves">Движения</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
+    <div class="inline" style="margin-bottom:12px"><div class="chips"><button class="chip on" data-sc="stock">На складе</button><button class="chip" data-sc="all">Весь каталог</button><button class="chip" id="low">Заканчиваются</button></div>
+    <select id="cat" style="width:auto;max-width:280px"><option value="">Все категории</option></select></div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
+  $$('[data-sc]', page).forEach((b) => (b.onclick = () => { scope = b.dataset.sc; $$('[data-sc]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
+  $('#cat', page).onchange = (e) => { cat = e.target.value; load(); };
+  $('#pricex', page).onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx';
+    inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return;
+      if (f.size > 10 * 1024 * 1024) return toast('Файл больше 10 МБ', true);
+      const file = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+      let pv; try { pv = await POST('/api/products/import-price', { file }); } catch (e) { return toast(e.message, true); }
+      modal('Прайс поставщика', `<div class="small muted" style="margin-bottom:10px">В файле ${pv.total} позиций. Закупочная цена — <b>VIP дилер</b>, цена продажи — <b>розничная</b>. Совпадающие товары (по коду или названию) обновятся, остатки не меняются.</div>
+        <div class="field"><label>Поставщик</label><input name="supplier" value="Спарта Маркет"></div>
+        <label>Какие разделы загрузить</label><div class="checkgrid">${pv.groups.map((g) => `<label class="ck"><input type="checkbox" name="g" value="${esc(g.name)}" ${g.def ? 'checked' : ''}> ${esc(g.name)} <span class="muted small">${g.n}</span></label>`).join('')}</div>`,
+      { submit: 'Загрузить', onSubmit: async (d, form) => {
+        const groups = $$('input[name=g]:checked', form).map((x) => x.value);
+        if (!groups.length) { toast('Выберите хотя бы один раздел', true); return false; }
+        const r = await POST('/api/products/import-price', { file, mode: 'commit', groups, supplier: d.supplier });
+        toast(`Добавлено: ${r.added}, обновлено цен: ${r.updated}`); load();
+      } });
+    };
+    inp.click();
+  };
   let rows = [];
   const load = async () => {
-    rows = await GET('/api/products' + qs({ q: $('#q', page).value, low: low ? 1 : '', all: 1 }));
-    const val = rows.filter((p) => p.active && p.stock > 0).reduce((s, p) => s + p.stock * p.cost, 0);
-    $('#sum', page).textContent = `${rows.length} поз. · на складе на ${rub(val)} по закупке`;
+    const allRows = await GET('/api/products' + qs({ q: $('#q', page).value, low: low ? 1 : '', all: 1 }));
+    const cats = [...new Set(allRows.map((p) => p.category).filter(Boolean))].sort();
+    $('#cat', page).innerHTML = '<option value="">Все категории</option>' + cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    rows = allRows.filter((p) => (!cat || p.category === cat) && (scope === 'all' || low || $('#q', page).value || p.stock !== 0 || p.min_stock > 0));
+    const shown = rows.slice(0, 500);
+    const val = allRows.filter((p) => p.active && p.stock > 0).reduce((s, p) => s + p.stock * p.cost, 0);
+    $('#sum', page).textContent = `${rows.length} поз.${rows.length > 500 ? ' (показаны первые 500 — уточните поиск)' : ''} · на складе на ${rub(val)} по закупке`;
     $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Товар</th><th>Артикул</th><th>Категория</th><th class="r">Закупка</th><th class="r">Цена</th><th class="r">Наценка</th><th class="r">Остаток</th><th></th></tr></thead><tbody>
-      ${rows.map((p) => `<tr class="click" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}"><td data-l="Товар"><b>${esc(p.name)}</b>${p.brand ? `<div class="small muted">${esc(p.brand)}</div>` : ''}</td><td data-l="Артикул" class="muted">${esc(p.sku || '')}</td><td data-l="Категория">${esc(p.category || '')}</td>
+      ${shown.map((p) => `<tr class="click" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}"><td data-l="Товар"><b>${esc(p.name)}</b>${p.brand ? `<div class="small muted">${esc(p.brand)}</div>` : ''}</td><td data-l="Артикул" class="muted">${esc(p.sku || '')}</td><td data-l="Категория">${esc(p.category || '')}</td>
       <td data-l="Закупка" class="r mono">${num(p.cost)}</td><td data-l="Цена" class="r mono">${num(p.price)}</td><td data-l="Наценка" class="r muted">${p.cost ? Math.round((p.price / p.cost - 1) * 100) + '%' : '—'}</td>
       <td data-l="Остаток" class="r"><span class="badge ${p.stock <= 0 ? 'red' : p.min_stock && p.stock <= p.min_stock ? 'warn' : 'ok'}">${num(p.stock)} ${esc(p.unit)}</span></td>
       <td><button class="sm" data-move="${p.id}" title="Корректировка остатка">±</button></td></tr>`).join('')}
-      </tbody></table>` : '<div class="empty">Товаров нет. Добавьте первый товар.</div>';
+      </tbody></table>` : `<div class="empty">${scope === 'stock' && !low ? 'На складе пока ничего нет. Оформите «Приход» или откройте «Весь каталог».' : 'Товаров не найдено'}</div>`;
   };
   const prodModal = (p = { unit: 'шт', warranty_months: 12, active: 1 }) => modal(p.id ? 'Товар' : 'Новый товар', `
     <div class="field"><label>Название *</label><input name="name" required value="${esc(p.name || '')}"></div>
@@ -731,16 +858,28 @@ route(/^\/stock$/, async (page) => {
       ${m.map((x) => `<tr><td class="nowrap">${dt(x.created_at)}</td><td>${esc(x.product)}</td><td class="r mono" style="color:${x.qty > 0 ? 'var(--ok)' : 'var(--bad)'}">${x.qty > 0 ? '+' : ''}${num(x.qty)}</td><td>${x.order_id ? `<a href="#/orders/${x.order_id}" onclick="this.closest('.overlay').remove()">${esc(x.note)}</a>` : esc(x.note || '')}</td><td class="muted">${esc(x.user || '')}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Движений нет</div>', { wide: true, footer: '<button type="button" data-x>Закрыть</button>' });
   };
-  $('#receipt', page).onclick = () => {
+  $('#imp', page).onclick = () => modal('Загрузка товаров из Excel', `
+    <div class="small muted" style="margin-bottom:8px">Выделите в Excel столбцы в порядке <b>Название · Цена · Категория · Бренд · Закупка · Остаток · Артикул</b> (лишние столбцы можно не брать), скопируйте и вставьте сюда. Товар с таким же названием не задвоится — обновятся цены.</div>
+    <textarea name="data" rows="12" placeholder="Alphard Machete MF-12S D2	10990	Сабвуферы	Alphard" style="font-family:monospace;font-size:12px"></textarea>`,
+  { wide: true, submit: 'Загрузить', onSubmit: async (d) => {
+    const rows = d.data.split(/\r?\n/).map((l) => l.split(/\t|;/)).filter((c) => c[0] && c[0].trim() && !/^назв/i.test(c[0].trim()))
+      .map((c) => ({ name: c[0], price: (c[1] || '').replace(/[^\d.,]/g, '').replace(',', '.'), category: c[2], brand: c[3], cost: (c[4] || '').replace(/[^\d.,]/g, '').replace(',', '.'), stock: c[5], sku: c[6] }));
+    if (!rows.length) { toast('Нет строк для загрузки', true); return false; }
+    const r = await POST('/api/products/import', { rows });
+    toast(`Добавлено: ${r.added}, обновлено: ${r.updated}`); load();
+  } });
+  $('#receipt', page).onclick = async () => {
+    const contrs = await contractorsList();
     const lines = [];
     const m = modal('Приход товара', `<div><input id="rq" placeholder="Найдите товар и выберите его…"></div>
       <table class="tbl" style="margin-top:10px"><thead><tr><th>Товар</th><th style="width:100px">Кол-во</th><th style="width:130px">Закупка, ₽</th><th class="r">Сумма</th><th></th></tr></thead><tbody id="rl"><tr><td colspan="5" class="muted">Пусто</td></tr></tbody></table>
       <div class="r" style="margin:10px 0;font-weight:700" id="rsum"></div>
-      <div class="row"><div class="field"><label>Поставщик / накладная</label><input name="note" placeholder="ООО Автозвук, накл. 123"></div>
-      <div class="field"><label>Оплата</label><select name="pay"><option value="">Не проводить расход</option><option value="1">Провести расход в кассе</option></select></div>
+      <div class="row"><div class="field"><label>Поставщик</label><select name="contractor_id">${opts(contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other').map((c) => [c.id, c.name]), '', '— не выбран —')}</select></div>
+      <div class="field"><label>Накладная / комментарий</label><input name="note" placeholder="накл. 123 от 15.10"></div></div>
+      <div class="row"><div class="field"><label>Оплата</label><select name="pay"><option value="now">Оплачено сейчас (расход в кассе)</option><option value="debt">В долг поставщику</option><option value="">Не учитывать оплату</option></select></div>
       <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'transfer')}</select></div></div>`,
     { wide: true, submit: 'Оприходовать', onSubmit: async (d) => {
-      const r = await POST('/api/stock/receipt', { items: lines, note: d.note, pay: !!d.pay, method: d.method });
+      const r = await POST('/api/stock/receipt', { items: lines, note: d.note, pay: d.pay, method: d.method, contractor_id: d.contractor_id || null });
       toast('Оприходовано на ' + rub(r.sum)); load();
     } });
     const draw = () => {
@@ -781,6 +920,88 @@ route(/^\/services$/, async (page) => {
     $$('tr[data-n]', page).forEach((tr) => tr.classList.toggle('hidden', !tr.dataset.n.includes(q)));
     $$('[data-cat]', page).forEach((c) => c.classList.toggle('hidden', !$$('tr[data-n]:not(.hidden)', c).length));
   };
+});
+
+// ================= Контрагенты =================
+const balTxt = (b) => (Math.abs(b) < 0.5 ? '<span class="muted">0 ₽</span>' : b > 0 ? `<span style="color:var(--ok)">нам должны ${rub(b)}</span>` : `<span style="color:var(--bad)">мы должны ${rub(-b)}</span>`);
+function contractorModal(c = { kind: 'supplier', active: 1 }, onDone) {
+  const K = S.me.contractor_kinds;
+  modal(c.id ? 'Контрагент' : 'Новый контрагент', `
+    <div class="row"><div class="field"><label>Название *</label><input name="name" required value="${esc(c.name || '')}" placeholder="ООО «Автозвук», Саша Автодом…"></div>
+    <div class="field"><label>Тип</label><select name="kind">${opts(Object.entries(K), c.kind)}</select></div></div>
+    <div class="row"><div class="field"><label>Контактное лицо</label><input name="contact" value="${esc(c.contact || '')}"></div>
+    <div class="field"><label>Телефон</label><input name="phone" value="${esc(c.phone || '')}"></div><div class="field"><label>ИНН</label><input name="inn" value="${esc(c.inn || '')}"></div></div>
+    <div class="field"><label>Реквизиты</label><textarea name="requisites" rows="2">${esc(c.requisites || '')}</textarea></div>
+    <div class="field"><label>Заметки</label><textarea name="notes" rows="2">${esc(c.notes || '')}</textarea></div>
+    ${c.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${c.active ? 'checked' : ''}> Активен</label>` : ''}`,
+  { onSubmit: async (d) => { if (!c.id) d.active = true; const r = c.id ? await PUT('/api/contractors/' + c.id, d) : await POST('/api/contractors', d); CACHE_CONTR = null; toast('Сохранено'); onDone ? onDone(r.id) : navigate(); } });
+}
+
+route(/^\/contractors$/, async (page) => {
+  let kind = '';
+  page.innerHTML = `<div class="topbar"><h1>Контрагенты</h1><div class="sp"></div><input class="search" id="q" placeholder="Название, ИНН, телефон"><button class="primary" id="add">+ Контрагент</button></div>
+    <div class="grid g3" style="margin-bottom:14px" id="sum"></div>
+    <div class="chips" style="margin-bottom:12px">${[['', 'Все'], ...Object.entries(S.me.contractor_kinds)].map(([k, t]) => `<button class="chip ${k === kind ? 'on' : ''}" data-k="${k}">${t}</button>`).join('')}</div>
+    <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
+  const load = async () => {
+    const all = await GET('/api/contractors' + qs({ q: $('#q', page).value, all: 1 })); CACHE_CONTR = all.filter((c) => c.active);
+    const rows = all.filter((c) => !kind || c.kind === kind);
+    const they = all.reduce((s, c) => s + Math.max(c.balance, 0), 0), we = all.reduce((s, c) => s + Math.max(-c.balance, 0), 0);
+    $('#sum', page).innerHTML = `<div class="kpi"><div class="l">Нам должны</div><div class="v ok">${rub(they)}</div></div><div class="kpi"><div class="l">Мы должны</div><div class="v bad">${rub(we)}</div></div><div class="kpi"><div class="l">Сальдо</div><div class="v ${they - we >= 0 ? 'acc' : 'bad'}">${rub(they - we)}</div></div>`;
+    $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Контрагент</th><th>Тип</th><th>Контакт</th><th class="r">Взаиморасчёты</th></tr></thead><tbody>
+      ${rows.map((c) => `<tr class="click" data-id="${c.id}" style="${c.active ? '' : 'opacity:.45'}"><td data-l="Контрагент"><b>${esc(c.name)}</b>${c.inn ? `<div class="small muted">ИНН ${esc(c.inn)}</div>` : ''}</td>
+      <td data-l="Тип">${esc(S.me.contractor_kinds[c.kind] || '')}</td><td data-l="Контакт">${esc([c.contact, c.phone].filter(Boolean).join(' · '))}</td><td data-l="Расчёты" class="r">${balTxt(c.balance)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">Контрагентов пока нет. Добавьте поставщиков, партнёров и подрядчиков.</div>';
+  };
+  $('#q', page).oninput = debounce(load, 300);
+  $$('[data-k]', page).forEach((b) => (b.onclick = () => { kind = b.dataset.k; $$('[data-k]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
+  $('#add', page).onclick = () => contractorModal(undefined, (id) => go('/contractors/' + id));
+  $('#list', page).onclick = (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) go('/contractors/' + tr.dataset.id); };
+  await load();
+});
+
+route(/^\/contractors\/(\d+)$/, async (page, id) => {
+  const c = await GET('/api/contractors/' + id);
+  let bal = 0;
+  const ledger = c.ledger.map((x) => { bal += x.they - x.we; return { ...x, bal }; }).reverse();
+  page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>${esc(c.name)}</h1><span class="badge">${esc(S.me.contractor_kinds[c.kind] || '')}</span><div class="sp"></div>
+    <button id="edit">Изменить</button><button id="sv">🖨 Акт сверки</button></div>
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="kpi"><div class="l">Нам должны</div><div class="v ok">${rub(Math.max(c.they_owe, 0))}</div></div>
+    <div class="kpi"><div class="l">Мы должны</div><div class="v bad">${rub(Math.max(c.we_owe, 0))}</div></div>
+    <div class="kpi"><div class="l">Итог</div><div class="v" style="font-size:18px">${balTxt(c.balance)}</div></div></div>
+  <div class="grid g-main"><div>
+    <div class="card"><div class="inline" style="margin-bottom:10px"><h2 style="margin:0;flex:1">Взаиморасчёты</h2>
+      <button class="sm" data-op="we_owe">+ Получили товар/услугу</button><button class="sm" data-op="they_owe">+ Начислить им</button>
+      <button class="sm" data-op="pay_out">Оплатить им</button><button class="sm primary" data-op="pay_in">Получить оплату</button></div>
+      ${ledger.length ? `<div class="tblwrap"><table class="tbl resp"><thead><tr><th>Дата</th><th>Операция</th><th class="r">Нам должны</th><th class="r">Мы должны</th><th class="r">Сальдо</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
+      ${ledger.map((x) => `<tr><td data-l="Дата" class="nowrap">${dmy(x.d)}</td><td data-l="Операция">${x.src === 'order' || x.src === 'opay' ? `<a href="#/orders/${x.order_id || x.id}">${esc(x.text)}</a>` : esc(x.text)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ''}</td>
+        <td data-l="Нам должны" class="r mono">${x.they ? (x.they > 0 ? '+' : '−') + num(Math.abs(x.they)) : ''}</td><td data-l="Мы должны" class="r mono">${x.we ? (x.we > 0 ? '+' : '−') + num(Math.abs(x.we)) : ''}</td>
+        <td data-l="Сальдо" class="r mono" style="color:${x.bal >= 0 ? 'var(--ok)' : 'var(--bad)'}">${num(x.bal)}</td>
+        ${isAdmin() ? `<td>${x.src === 'op' ? `<button class="ghost sm danger" data-delop="${x.id}">✕</button>` : x.src === 'pay' ? `<button class="ghost sm danger" data-delpay="${x.id}">✕</button>` : ''}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty">Операций пока нет</div>'}</div>
+    ${c.orders.length ? `<div class="card"><h2>Заказ-наряды контрагента</h2><table class="tbl resp"><thead><tr><th>№</th><th>Статус</th><th>Авто</th><th class="r">Сумма</th><th class="r">Оплачено</th></tr></thead><tbody>
+      ${c.orders.map((o) => `<tr class="click" data-o="${o.id}"><td data-l="№"><b>${orderNo(o.id)}</b></td><td data-l="Статус">${stBadge(o.status)}</td><td data-l="Авто">${esc(carStr(o))} <span class="muted small">${esc(o.client || '')}</span></td><td data-l="Сумма" class="r mono">${rub(o.total)}</td><td data-l="Оплачено" class="r mono">${rub(o.paid)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  </div><div>
+    <div class="card"><h2>Реквизиты</h2>
+      ${c.contact || c.phone ? `<div class="field">${esc(c.contact || '')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</div>` : ''}
+      ${c.inn ? `<div class="field">ИНН ${esc(c.inn)}</div>` : ''}
+      ${c.requisites ? `<div class="field small" style="white-space:pre-wrap">${esc(c.requisites)}</div>` : ''}
+      ${c.notes ? `<div class="small muted" style="white-space:pre-wrap">${esc(c.notes)}</div>` : ''}
+      <div class="small muted" style="margin-top:10px">Заказ-наряд можно привязать к контрагенту в карточке заказа — неоплаченные выданные заказы попадут в его долг. Приход товара от поставщика в долг оформляется на складе.</div></div>
+  </div></div>`;
+  $('#edit', page).onclick = () => contractorModal(c);
+  $('#sv', page).onclick = () => modal('Акт сверки', `<div class="row"><div class="field"><label>С</label><input type="date" name="from" value="${today().slice(0, 5)}01-01"></div><div class="field"><label>По</label><input type="date" name="to" value="${today()}"></div></div>`,
+    { submit: 'Сформировать', onSubmit: (d) => { window.open(`/print/contractor/${c.id}/sverka?from=${d.from}&to=${d.to}`, '_blank'); } });
+  const T = { we_owe: 'Получили товар / услугу (мы должны)', they_owe: 'Начислить контрагенту (он должен нам)', pay_out: 'Оплата контрагенту (расход из кассы)', pay_in: 'Оплата от контрагента (приход в кассу)' };
+  $$('[data-op]', page).forEach((b) => (b.onclick = () => { const t = b.dataset.op; modal(T[t], `
+    <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
+    ${t.startsWith('pay') ? `<div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'transfer')}</select></div>` : ''}</div>
+    <div class="field"><label>Основание / комментарий</label><input name="note" placeholder="${t === 'we_owe' ? 'Накладная №…, печать стоек, ламинация карбона…' : 'Счёт №…'}"></div>`,
+  { onSubmit: async (d) => { await POST(`/api/contractors/${c.id}/op`, { ...d, type: t }); CACHE_CONTR = null; toast('Проведено'); navigate(); } }); }));
+  $$('[data-o]', page).forEach((e) => (e.onclick = () => go('/orders/' + e.dataset.o)));
+  $$('[data-delop]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию?', 'Удалить')) { await DEL('/api/contractor-ops/' + b.dataset.delop); navigate(); } }));
+  $$('[data-delpay]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить платёж из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delpay); navigate(); } }));
 });
 
 // ================= Финансы =================
@@ -831,7 +1052,7 @@ route(/^\/finance$/, async (page, query) => {
       <div class="legend"><span><i style="background:var(--accent)"></i>Приход</span><span><i style="background:#4a5160"></i>Расход</span></div>` : '<div class="empty">Нет движения денег</div>'}</div>
     <div class="card"><div class="inline" style="margin-bottom:10px"><h2 style="margin:0;flex:1">Журнал кассы</h2><button class="sm" id="addIn">+ Приход</button><button class="sm" id="addOut">+ Расход</button></div>
       ${pays.length ? `<div class="tblwrap" style="max-height:480px;overflow-y:auto"><table class="tbl resp"><thead><tr><th>Дата</th><th>Статья</th><th>Основание</th><th>Способ</th><th class="r">Сумма</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-      ${pays.map((p) => `<tr><td data-l="Дата" class="nowrap">${dt(p.created_at)}</td><td data-l="Статья">${esc(p.category || '')}${p.employee ? ' · ' + esc(p.employee) : ''}</td>
+      ${pays.map((p) => `<tr><td data-l="Дата" class="nowrap">${dt(p.created_at)}</td><td data-l="Статья">${esc(p.category || '')}${p.employee ? ' · ' + esc(p.employee) : ''}${p.contractor ? ` · <a href="#/contractors/${p.contractor_id}">${esc(p.contractor)}</a>` : ''}</td>
       <td data-l="Основание">${p.order_id ? `<a href="#/orders/${p.order_id}">${orderNo(p.order_id)}</a> ${esc(p.client || '')}` : ''} <span class="muted">${esc(p.note || '')}</span></td><td data-l="Способ" class="muted">${METHODS[p.method] || ''}</td>
       <td data-l="Сумма" class="r mono" style="color:${p.direction === 'in' ? 'var(--ok)' : 'var(--bad)'}">${p.direction === 'in' ? '+' : '−'}${num(p.amount)}</td>${isAdmin() ? `<td><button class="ghost sm danger" data-delp="${p.id}">✕</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Операций нет</div>'}</div>
@@ -849,10 +1070,12 @@ route(/^\/finance$/, async (page, query) => {
     <div class="card"><h2>Откуда клиенты</h2>${r.sources.map((x) => `<div class="li"><div class="grow">${esc(x.source)}</div><b>${x.n}</b></div>`).join('') || '<div class="muted">Нет данных</div>'}</div>
   </div></div>`;
   bindPeriod(page, (f, t) => go('/finance' + qs({ from: f, to: t })));
+  const contrs = await contractorsList();
   const payModal = (dir) => modal(dir === 'in' ? 'Приход в кассу' : 'Расход', `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" step="any" min="0.01" required></div>
     <div class="field"><label>Статья</label><select name="category" id="cat">${opts(dir === 'in' ? INCOME_CATS : EXPENSE_CATS.filter((c) => isAdmin() || c !== 'Зарплата'))}</select></div></div>
     <div class="row"><div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'cash')}</select></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
+    <div class="field"><label>Контрагент</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name]), '', '—')}</select></div>
     <div class="field hidden" id="empF"><label>Сотрудник</label><select name="employee_id">${opts(S.staff.map((u) => [u.id, u.name]), '', '—')}</select></div></div>
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
   { onSubmit: async (d) => { await POST('/api/payments', { ...d, direction: dir }); toast('Проведено'); navigate(); },
@@ -867,7 +1090,7 @@ route(/^\/salary$/, async (page, query) => {
   const from = query.from || monthStart(), to = query.to || today();
   const rows = await GET('/api/reports/salary' + qs({ from, to }));
   page.innerHTML = `<div class="topbar"><h1>${isAdmin() ? 'Зарплата' : 'Моя зарплата'}</h1><div class="sp"></div>${periodBar(page, from, to)}</div>
-    <div class="small muted" style="margin-bottom:12px">Начисление: % мастера от стоимости работ по выданным заказам (с учётом скидки) + % менеджера от товаров в его заказах. Проценты задаются в разделе «Сотрудники».</div>
+    <div class="small muted" style="margin-bottom:12px">Начисление: % от стоимости работ по выданным заказам (с учётом скидки). Товары в зарплату мастеров не входят; % от товаров начисляется, только если он задан сотруднику. Проценты задаются в разделе «Сотрудники».</div>
     ${rows.length ? rows.map((u) => `<div class="card"><div class="inline" style="margin-bottom:8px"><h2 style="margin:0;flex:1">${esc(u.name)} <span class="muted small">${ROLES[u.role]} · работы ${u.salary_percent || 0}%${u.goods_percent ? ' · товары ' + u.goods_percent + '%' : ''}</span></h2>
       ${isAdmin() && u.due > 0 ? `<button class="sm primary" data-pay="${u.id}" data-due="${u.due}">Выплатить ${rub(u.due)}</button>` : ''}</div>
       <div class="grid g4"><div class="kpi"><div class="l">Работы</div><div class="v" style="font-size:18px">${rub(u.works_sum)}</div></div><div class="kpi"><div class="l">Начислено</div><div class="v acc" style="font-size:18px">${rub(u.accrued)}</div></div>
@@ -891,7 +1114,7 @@ route(/^\/users$/, async (page) => {
     </tbody></table></div>
     <div class="card small muted"><b>Роли.</b> Администратор — всё, включая сотрудников и настройки. Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
-  const userModal = (u = { role: 'master', active: 1 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
+  const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
     <div class="row"><div class="field"><label>Имя *</label><input name="name" required value="${esc(u.name || '')}"></div>
     <div class="field"><label>Логин *</label><input name="login" required value="${esc(u.login || '')}" ${u.id ? 'disabled' : ''} autocapitalize="off"></div></div>
     <div class="row"><div class="field"><label>Роль</label><select name="role">${opts(Object.entries(ROLES), u.role)}</select></div><div class="field"><label>Телефон</label><input name="phone" value="${esc(u.phone || '')}"></div></div>
@@ -906,6 +1129,34 @@ route(/^\/users$/, async (page) => {
 });
 
 // ================= Настройки =================
+async function loadUpdateCard(page) {
+  const box = $('#updCard', page); if (!box) return;
+  let u;
+  try { u = await GET('/api/admin/update'); } catch (e) { box.innerHTML = '<h2>Обновление и домен</h2><div class="muted">Сервер перезапускается, подождите…</div>'; setTimeout(() => pollUpdate(page), 4000); return; }
+  const running = u.pending || (u.log && !/=== Готово/.test(u.log) && /=== Старт/.test(u.log));
+  box.innerHTML = `<h2>Обновление и домен</h2>
+    <div class="small muted" style="margin-bottom:10px">Версия CRM: <b>${esc(u.version)}</b>${u.domain ? ` · домен: <b>${esc(u.domain)}</b>` : ' · домен не подключён'}</div>
+    ${u.updater ? '' : '<div class="small" style="color:var(--warn);margin-bottom:10px">Кнопки заработают после одной установки из консоли сервера (команда go.sh).</div>'}
+    <button type="button" class="primary" id="updBtn" ${running ? 'disabled' : ''}>${running ? '⏳ Идёт обновление…' : '⟳ Обновить CRM'}</button>
+    <h3 style="margin-top:16px">Подключить домен с HTTPS</h3>
+    <div class="small muted" style="margin-bottom:8px">Сначала у регистратора создайте A-запись домена на IP сервера <b>${esc(location.hostname)}</b> и подождите 10–30 минут.</div>
+    <div class="row"><div class="field"><label>Домен</label><input id="dom" placeholder="crm.boomsystem.ru" value="${esc(u.domain || '')}"></div>
+    <div class="field"><label>Email для сертификата</label><input id="dmail" type="email" value="${esc(u.email || '')}"></div></div>
+    <button type="button" id="domBtn" ${running ? 'disabled' : ''}>🔒 Подключить домен</button>
+    ${u.log ? `<details ${running ? 'open' : ''} style="margin-top:12px"><summary class="muted small" style="cursor:pointer">Журнал последнего обновления</summary><pre class="code" style="max-height:260px;overflow:auto">${esc(u.log)}</pre></details>` : ''}`;
+  const start = async (body, msg) => {
+    try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
+    setTimeout(() => pollUpdate(page), 3000);
+    loadUpdateCard(page);
+  };
+  $('#updBtn', box).onclick = async () => { if (await confirmBox('Обновить CRM до последней версии? Займёт 1–3 минуты, данные сохранятся.', 'Обновить')) start({}, 'Обновление запущено'); };
+  $('#domBtn', box).onclick = async () => {
+    const domain = $('#dom', box).value.trim(); if (!domain) return toast('Введите домен', true);
+    if (await confirmBox(`Подключить ${domain}? После этого CRM будет открываться по адресу https://${domain}`, 'Подключить')) start({ domain, email: $('#dmail', box).value.trim(), server_ip: location.hostname }, 'Подключаю домен, 2–4 минуты…');
+  };
+  if (running) setTimeout(() => pollUpdate(page), 4000);
+}
+function pollUpdate(page) { if (location.hash.startsWith('#/settings')) loadUpdateCard(page).catch(() => setTimeout(() => pollUpdate(page), 4000)); }
 route(/^\/settings$/, async (page) => {
   const s = await GET('/api/settings');
   const origin = location.origin;
@@ -918,7 +1169,8 @@ route(/^\/settings$/, async (page) => {
       <div class="row"><div class="field"><label>Телефон</label><input name="company_phone" value="${esc(s.company_phone)}"></div><div class="field"><label>ИНН</label><input name="company_inn" value="${esc(s.company_inn)}"></div></div>
       <div class="field"><label>Реквизиты для документов (ИП/ООО, ОГРН, р/с)</label><textarea name="company_requisites">${esc(s.company_requisites)}</textarea></div></div>
     <div class="card"><h2>Запись</h2>
-      <div class="field"><label>Боксы / посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
+      <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
+      <div class="field"><label>Наценка при безналичной оплате, %</label><input type="number" name="cashless_markup" min="0" max="50" step="any" value="${esc(s.cashless_markup)}"></div>
       <div class="row"><div class="field"><label>Начало дня</label><input type="time" name="work_start" value="${esc(s.work_start)}"></div><div class="field"><label>Конец дня</label><input type="time" name="work_end" value="${esc(s.work_end)}"></div></div>
       <h2 style="margin-top:16px">Тексты документов</h2>
       <div class="field"><label>Условия в заказ-наряде и акте</label><textarea name="order_terms" rows="4">${esc(s.order_terms)}</textarea></div>
@@ -957,7 +1209,24 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
       <div class="small muted">Тот же адрес подходит для Тильды (вебхук), квизов и чат-ботов: POST JSON или form-data, поля name, phone, car, message, source, ключ — в заголовке X-API-Key или параметре ?key=.</div></div>
     <div class="card"><h2>Резервные копии</h2><div class="small muted" style="margin-bottom:10px">Сервер делает копию базы каждую ночь и хранит 30 последних. Скачивайте копию себе раз в неделю.</div>
       <a class="btn" href="/api/backup">⬇ Скачать копию базы</a></div>
-  </div><div style="margin-top:14px"><button class="primary">Сохранить настройки</button></div></form>`;
+  </div><div style="margin-top:14px"><button class="primary">Сохранить настройки</button></div></form>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
+    <div class="card"><h2>Импорт журнала из Excel</h2>
+      <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
+      <input type="file" id="jfile" accept=".json,application/json" style="display:none"><button type="button" id="jbtn">⬆ Загрузить файл журнала</button></div>
+  </div>`;
+  $('#jbtn', page).onclick = () => $('#jfile', page).click();
+  $('#jfile', page).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const r = await POST('/api/cal-notes/import', { notes: Array.isArray(data) ? data : data.notes });
+      toast(`Импортировано записей: ${r.added} из ${r.total}`);
+    } catch (err) { toast('Не удалось импортировать: ' + err.message, true); }
+    e.target.value = '';
+  };
+  loadUpdateCard(page);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(e.target); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';

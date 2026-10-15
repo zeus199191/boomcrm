@@ -18,6 +18,13 @@ APP_DIR=/opt/boomcrm
 DATA_DIR=/var/lib/boomcrm
 PORT=3000
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONF="$DATA_DIR/domain.conf"
+
+# Домен запоминается: при обновлении без параметров берём сохранённый
+if [ -z "$DOMAIN" ] && [ -f "$CONF" ]; then
+  DOMAIN="$(sed -n 1p "$CONF" | tr -cd 'a-zA-Z0-9.-')"
+  EMAIL="$(sed -n 2p "$CONF" | tr -cd 'a-zA-Z0-9.@_+-')"
+fi
 
 c_ok()  { echo -e "\e[32m✔ $*\e[0m"; }
 c_inf() { echo -e "\e[36m→ $*\e[0m"; }
@@ -108,7 +115,7 @@ cat > /etc/nginx/sites-available/boomcrm <<EOF
 server {
     listen $LISTEN;
     server_name $SERVER_NAME;
-    client_max_body_size 5m;
+    client_max_body_size 20m;
     server_tokens off;
 
     gzip on;
@@ -136,6 +143,43 @@ ufw allow 'Nginx Full' >/dev/null
 ufw --force enable >/dev/null
 c_ok "Firewall: открыты только SSH, HTTP и HTTPS"
 
+# --- Обновление и подключение домена из интерфейса CRM (без консоли) ---
+cat > /usr/local/bin/boomcrm-update <<'EOF2'
+#!/usr/bin/env bash
+REQ=/var/lib/boomcrm/update.request
+LOG=/var/lib/boomcrm/update.log
+[ -f "$REQ" ] || exit 0
+DOMAIN="$(sed -n 1p "$REQ" | tr -cd 'a-zA-Z0-9.-')"
+EMAIL="$(sed -n 2p "$REQ" | tr -cd 'a-zA-Z0-9.@_+-')"
+rm -f "$REQ"
+{
+  echo "=== Старт: $(date '+%d.%m.%Y %H:%M') ==="
+  curl -fsSL https://raw.githubusercontent.com/zeus199191/boomcrm/main/go.sh | bash -s -- $DOMAIN $EMAIL
+  echo "=== Готово (код $?): $(date '+%d.%m.%Y %H:%M') ==="
+} > "$LOG" 2>&1 < /dev/null
+chown boomcrm:boomcrm "$LOG"
+EOF2
+chmod 755 /usr/local/bin/boomcrm-update
+cat > /etc/systemd/system/boomcrm-update.service <<EOF2
+[Unit]
+Description=Boomsystem CRM self-update
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/boomcrm-update
+TimeoutStartSec=1800
+EOF2
+cat > /etc/systemd/system/boomcrm-update.path <<EOF2
+[Unit]
+Description=Watch for CRM update request
+[Path]
+PathExists=$DATA_DIR/update.request
+[Install]
+WantedBy=multi-user.target
+EOF2
+systemctl daemon-reload
+systemctl enable --now boomcrm-update.path >/dev/null 2>&1
+c_ok "Обновление из интерфейса CRM включено (Настройки → Обновление)"
+
 # --- Ежедневная резервная копия в 03:30 ---
 cat > /etc/cron.d/boomcrm <<EOF
 CRM_DATA=$DATA_DIR
@@ -149,8 +193,9 @@ if [ -n "$DOMAIN" ]; then
   c_inf "Получаю SSL-сертификат для $DOMAIN"
   apt-get install -y -qq $APTOPT certbot python3-certbot-nginx >/dev/null
   if [ -n "$EMAIL" ]; then EM="-m $EMAIL"; else EM="--register-unsafely-without-email"; fi
-  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos $EM --redirect -q; then
+  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --keep-until-expiring $EM --redirect -q; then
     c_ok "HTTPS включён, сертификат будет продлеваться автоматически"
+    printf '%s\n%s\n' "$DOMAIN" "$EMAIL" > "$CONF"; chown boomcrm:boomcrm "$CONF"
   else
     c_err "Сертификат не получен. Проверьте, что A-запись $DOMAIN указывает на IP этого сервера, и запустите скрипт снова."
   fi
