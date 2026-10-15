@@ -435,17 +435,11 @@ function productAddModal(o, p, suppliers, reload) {
 
 // ---------- Приёмка автомобиля ----------
 function acceptCard(o, office) {
-  const L = S.me.accept_lists; const a = o.accept || { kit: [], works: [] };
   const dis = office ? '' : 'disabled';
-  const checks = (name, items, sel) => `<div class="checkgrid">${items.map((t) => `<label class="ck"><input type="checkbox" name="${name}" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''} ${dis}> ${esc(t)}</label>`).join('')}</div>`;
   return `<form class="card" id="acc"><div class="inline" style="margin-bottom:6px"><h2 style="margin:0;flex:1">Приёмка автомобиля</h2>
     ${o.accept_at ? `<span class="badge ok">принят ${dt(o.accept_at)}</span>` : '<span class="badge warn">не оформлена</span>'}</div>
     <div class="row"><div class="field"><label>Дата и время приёмки</label><input type="datetime-local" name="accept_at" value="${esc(o.accept_at || '')}" ${dis}></div>
     <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${dis}></div></div>
-    <div class="field"><label>Топливо</label><div class="chips">${L.fuel.map((f) => `<label class="chip ${o.accept_fuel === f ? 'on' : ''}"><input type="radio" name="accept_fuel" value="${f}" ${o.accept_fuel === f ? 'checked' : ''} ${dis} hidden>${f}</label>`).join('')}</div></div>
-    <details ${o.accept_at ? '' : 'open'}><summary class="muted" style="cursor:pointer;margin-bottom:6px">Комплектность и исправность систем</summary>
-    <label>Комплектность</label>${checks('kit', L.kit, a.kit)}
-    <label style="margin-top:8px">Работает при приёмке</label>${checks('works', L.works, a.works)}</details>
     <div class="field" style="margin-top:8px"><label>Повреждения, сколы, царапины</label><textarea name="accept_damage" rows="2" ${dis} placeholder="Напр.: скол на капоте, царапина на заднем бампере справа">${esc(o.accept_damage || '')}</textarea></div>
     <div class="field"><label>Личные вещи в салоне</label><input name="accept_items" value="${esc(o.accept_items || '')}" ${dis} placeholder="Детское кресло, зарядка…"></div>
     ${office ? `<div class="inline"><button class="primary sm">${o.accept_at ? 'Сохранить' : 'Принять в работу'}</button><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Печать акта</a></div>` : ''}
@@ -453,13 +447,10 @@ function acceptCard(o, office) {
 }
 function bindAccept(page, o, reload) {
   const f = $('#acc', page); if (!f) return;
-  $$('input[name=accept_fuel]', f).forEach((r) => r.addEventListener('change', () => $$('.chip', f).forEach((c) => c.classList.toggle('on', $('input', c).checked))));
   f.onsubmit = async (e) => {
     e.preventDefault();
     const body = {
       accept_at: f.accept_at.value || null, mileage: f.mileage.value,
-      accept_fuel: ($('input[name=accept_fuel]:checked', f) || {}).value || null,
-      kit: $$('input[name=kit]:checked', f).map((x) => x.value), works: $$('input[name=works]:checked', f).map((x) => x.value),
       accept_damage: f.accept_damage.value, accept_items: f.accept_items.value,
     };
     try {
