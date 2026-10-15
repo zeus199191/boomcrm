@@ -153,6 +153,7 @@ const ICONS = {
   users: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/>'),
   settings: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   partners: I('<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6M8 10h.01M12 10h.01M16 10h.01"/>'),
+  chat: I('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
 };
 
@@ -163,6 +164,7 @@ const NAV = [
   ['/orders', 'Заказ-наряды', 'orders', 'all'],
   ['/clients', 'Клиенты', 'clients', 'office'],
   ['/leads', 'Заявки', 'leads', 'office'],
+  ['/messages', 'Сообщения', 'chat', 'office'],
   ['/stock', 'Склад', 'stock', 'office'],
   ['/services', 'Услуги и цены', 'services', 'office'],
   ['/contractors', 'Контрагенты', 'partners', 'office'],
@@ -178,12 +180,14 @@ function renderShell() {
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><div class="mark">Б</div><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
-    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : ''}</a>`).join('')}</nav>
+    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
-      <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div></div>
+      <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
+      ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
   </aside><main class="main" id="page"></main></div>`;
   $('#logout').onclick = async () => { await POST('/api/logout'); S.me = null; renderLogin(); };
   $('#myPass').onclick = changeMyPassword;
+  const mm = $('#myMax'); if (mm) mm.onclick = async () => { try { maxLinkModal(await POST('/api/me/max-link'), S.me.user.name); } catch (e) { toast(e.message, true); } };
   $('#burger').onclick = () => $('#side').classList.toggle('open');
   $('#side').addEventListener('click', (e) => { if (e.target.closest('a')) $('#side').classList.remove('open'); });
 }
@@ -201,7 +205,21 @@ async function refreshLeadsBadge() {
     const d = await GET('/api/leads?status=new');
     const b = $('#leadsBadge'); if (!b) return;
     b.textContent = d.length; b.classList.toggle('hidden', !d.length);
+    const m = await GET('/api/messages/unread'); const mb = $('#msgBadge');
+    if (mb) { mb.textContent = m.n; mb.classList.toggle('hidden', !m.n); }
   } catch {}
+}
+
+// Окно подключения MAX: ссылка на бота с кодом или код вручную
+function maxLinkModal(r, name) {
+  modal('Подключить MAX', `
+    <p>Сотрудник: <b>${esc(name)}</b></p>
+    ${r.link ? `<p>1. Откройте ссылку на телефоне, где установлен MAX, и нажмите «Начать»:</p>
+      <div class="inline" style="flex-wrap:nowrap;margin-bottom:12px"><input readonly value="${esc(r.link)}" id="mlink"><button type="button" class="sm" id="mcopy">Копировать</button></div>
+      <p class="muted small">Или найдите в MAX бота <b>@${esc(r.bot)}</b> и отправьте ему код:</p>` : '<p>Найдите в MAX бота студии и отправьте ему код:</p>'}
+    <div style="font-size:34px;font-weight:800;letter-spacing:6px;text-align:center;padding:10px;background:var(--bg);border-radius:10px">${esc(r.code)}</div>
+    <p class="small muted" style="margin-top:10px">Код одноразовый. После подключения бот ответит «Готово», и уведомления начнут приходить в MAX.</p>`,
+  { footer: '<button type="button" class="primary" data-x>Понятно</button>', onOpen: (f) => { const c = $('#mcopy', f); if (c) c.onclick = () => { navigator.clipboard?.writeText(r.link); toast('Ссылка скопирована'); }; } });
 }
 
 function changeMyPassword() {
@@ -488,6 +506,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     <div class="card"><h2>Клиент и автомобиль</h2>${o.contractor_name ? `<div class="field"><span class="badge">🤝 ${esc(o.contractor_name)}</span></div>` : ''}
       <div class="field"><b>${o.client_id && office ? `<a href="#/clients/${o.client_id}">${esc(o.client_name)}</a>` : esc(o.client_name || '—')}</b>
       ${o.client_phone ? `<div><a href="tel:${esc(o.client_phone)}">${esc(o.client_phone)}</a></div>` : ''}</div>
+      ${office && o.master_id ? `<button type="button" class="sm" id="msgMaster" style="margin-bottom:10px">✉ Написать мастеру (${esc(o.master_name || '')})</button>` : ''}
       <div class="field"><div>${esc([o.brand, o.model, o.year].filter(Boolean).join(' ') || '—')}</div>
       <div class="muted small">${o.plate ? 'Госномер ' + esc(o.plate) : ''}${o.vin ? ' · VIN ' + esc(o.vin) : ''}${o.color ? ' · ' + esc(o.color) : ''}</div></div>
     </div>
@@ -531,6 +550,11 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     try { await PUT('/api/orders/' + o.id, d); toast('Сохранено'); reload(); } catch (err) { toast(err.message, true); }
   };
   bindAccept(page, o, reload);
+  const mmb = $('#msgMaster', page);
+  if (mmb) mmb.onclick = () => modal('Сообщение мастеру · ' + (o.master_name || ''), `
+    <div class="small muted" style="margin-bottom:8px">Уйдёт в MAX (или Telegram) от бота студии с вашей подписью и номером заказа. Ответ мастера появится в истории заказа и в «Сообщениях».</div>
+    <div class="field"><textarea name="text" rows="4" required placeholder="Напр.: клиент просит поставить сабвуфер левее, перезвони ему"></textarea></div>`,
+  { submit: 'Отправить', onSubmit: async (d) => { const r = await POST(`/api/orders/${o.id}/message`, { text: d.text }); toast('Отправлено: ' + r.channels.join(', ').replace('max', 'MAX').replace('telegram', 'Telegram')); reload(); } });
   // inline-редактирование позиций
   $$('tr[data-item]', page).forEach((tr) => {
     $$('[data-f]', tr).forEach((inp) => inp.addEventListener('change', async () => {
@@ -948,6 +972,52 @@ route(/^\/services$/, async (page) => {
   };
 });
 
+// ================= Сообщения сотрудникам =================
+route(/^\/messages$/, async (page, query) => {
+  let cur = query.u ? +query.u : null;
+  let timer = null;
+  const renderList = async () => {
+    const list = await GET('/api/messages');
+    $('#mlist', page).innerHTML = list.map((u) => `<div class="li click ${u.id === cur ? 'active' : ''}" data-u="${u.id}" style="${u.id === cur ? 'background:var(--accentbg)' : ''};padding:10px">
+      <div class="grow"><div class="t">${esc(u.name)} ${u.unread ? `<span class="badge red">${u.unread}</span>` : ''}</div>
+      <div class="s">${u.last_text ? esc(u.last_text) : `<span class="muted">${u.max ? 'MAX' : ''}${u.max && u.tg ? ' · ' : ''}${u.tg ? 'Telegram' : ''}${!u.max && !u.tg ? 'не подключён' : ''}</span>`}</div></div>
+      ${u.max ? '<span class="badge ok" title="MAX подключён">MAX</span>' : ''}</div>`).join('');
+    $$('[data-u]', page).forEach((el) => (el.onclick = () => { cur = +el.dataset.u; history.replaceState(null, '', '#/messages?u=' + cur); renderList(); renderThread(); }));
+    return list;
+  };
+  const renderThread = async () => {
+    const box = $('#thread', page);
+    if (!cur) { box.innerHTML = '<div class="empty">Выберите сотрудника слева</div>'; return; }
+    const msgs = await GET('/api/messages/' + cur);
+    box.innerHTML = `<div class="chatlog" id="clog">${msgs.map((m) => `<div class="bubble ${m.direction}">${m.order_id ? `<a class="small" href="#/orders/${m.order_id}">${orderNo(m.order_id)}</a>\n` : ''}${esc(m.text)}<div class="meta">${dt(m.created_at)}${m.direction === 'out' ? ' · ' + esc(m.author || '') + ' · ' + esc((m.channel || '').replace('max', 'MAX').replace('telegram', 'Telegram')) : ''}</div></div>`).join('') || '<div class="empty">Переписки пока нет</div>'}</div>
+      <form class="inline" id="mform" style="flex-wrap:nowrap;margin-top:10px"><textarea name="text" rows="2" placeholder="Сообщение… (Enter — отправить, Shift+Enter — новая строка)" style="min-height:44px"></textarea><button class="primary">Отправить</button></form>`;
+    const log = $('#clog', box); log.scrollTop = log.scrollHeight;
+    const f = $('#mform', box);
+    f.text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
+    f.onsubmit = async (e) => {
+      e.preventDefault(); const text = f.text.value.trim(); if (!text) return;
+      try { await POST('/api/messages/' + cur, { text }); f.text.value = ''; renderThread(); renderList(); } catch (err) { toast(err.message, true); }
+    };
+    refreshLeadsBadge();
+  };
+  page.innerHTML = `<div class="topbar"><h1>Сообщения</h1><div class="sp"></div><button id="bcast">📣 Рассылка нескольким</button></div>
+    <div class="grid" style="grid-template-columns:minmax(220px,300px) 1fr;gap:14px"><div class="card" style="padding:4px;max-height:calc(100vh - 140px);overflow:auto"><div class="list" id="mlist"></div></div>
+    <div class="card" id="thread"></div></div>`;
+  const list = await renderList(); await renderThread();
+  $('#bcast', page).onclick = () => modal('Рассылка сотрудникам', `
+    <label>Кому</label><div class="checkgrid" style="margin-bottom:10px">${list.filter((u) => u.max || u.tg).map((u) => `<label class="ck"><input type="checkbox" name="to" value="${u.id}" ${u.role === 'master' || u.is_master ? 'checked' : ''}> ${esc(u.name)}</label>`).join('') || '<span class="muted">Никто ещё не подключил MAX или Telegram</span>'}</div>
+    <div class="field"><label>Сообщение</label><textarea name="text" rows="4" required placeholder="Напр.: завтра собрание в 9:00"></textarea></div>`,
+  { submit: 'Отправить', onSubmit: async (d, form) => {
+    const ids = $$('input[name=to]:checked', form).map((x) => +x.value);
+    if (!ids.length) { toast('Выберите получателей', true); return false; }
+    const r = await POST('/api/messages-broadcast', { user_ids: ids, text: d.text });
+    const bad = r.filter((x) => !x.ok);
+    toast(bad.length ? `Отправлено ${r.length - bad.length}, не удалось: ${bad.length}` : `Отправлено: ${r.length}`, !!bad.length);
+    renderList(); renderThread();
+  } });
+  timer = setInterval(() => { if (!location.hash.startsWith('#/messages')) return clearInterval(timer); renderList(); if (cur && !document.activeElement?.closest?.('#mform')) renderThread(); }, 15000);
+});
+
 // ================= Контрагенты =================
 const balTxt = (b) => (Math.abs(b) < 0.5 ? '<span class="muted">0 ₽</span>' : b > 0 ? `<span style="color:var(--ok)">нам должны ${rub(b)}</span>` : `<span style="color:var(--bad)">мы должны ${rub(-b)}</span>`);
 function contractorModal(c = { kind: 'supplier', active: 1 }, onDone) {
@@ -1155,9 +1225,9 @@ route(/^\/salary$/, async (page, query) => {
 route(/^\/users$/, async (page) => {
   const rows = await GET('/api/users');
   page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1><div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
-    <div class="card" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>Telegram</th></tr></thead><tbody>
+    <div class="card" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
-    <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
+    <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="card small muted"><b>Роли.</b> Администратор — всё, включая сотрудников и настройки. Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
@@ -1169,16 +1239,28 @@ route(/^\/users$/, async (page) => {
     <div class="field"><label>% от товаров</label><input name="goods_percent" type="number" step="any" min="0" max="100" value="${u.goods_percent || 0}"></div></div>
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
     <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
-    ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>` : ''}`,
+    ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>
+    <h3 style="margin-top:14px">MAX и уведомления</h3>
+    <div class="inline" style="margin-bottom:8px">${u.max_linked ? '<span class="badge ok">MAX подключён</span>' : '<span class="badge">MAX не подключён</span>'}
+      <button type="button" class="sm" data-mxl>${u.max_linked ? 'Переподключить' : '📲 Подключить MAX'}</button>${u.max_linked ? '<button type="button" class="sm ghost danger" data-mxu>Отключить</button>' : ''}</div>
+    <div id="ntf" class="checkgrid"><span class="muted small">Загрузка…</span></div>` : ''}`,
   { footer: u.id && u.id !== S.me.user.id ? '<button type="button" class="ghost danger" data-delu style="margin-right:auto">Удалить сотрудника</button><button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>' : undefined,
-    onSubmit: async (d) => {
+    onSubmit: async (d, form) => {
       if (u.id) await PUT('/api/users/' + u.id, d); else await POST('/api/users', d);
+      if (u.id && $('#ntf input', form)) await PUT(`/api/users/${u.id}/notify`, { subs: $$('#ntf input:checked', form).map((x) => x.value) });
       S.staff = await GET('/api/staff');
       if (u.id === S.me.user.id) S.me = await GET('/api/me');
       toast('Сохранено'); renderShell(); navigate();
     },
     // руководителям начисления ведутся вне CRM, мастерам — 50% от работ
     onOpen: (f, close) => {
+      if (u.id) {
+        Promise.all([GET('/api/notify/events'), GET(`/api/users/${u.id}/notify`)]).then(([ev, n]) => {
+          $('#ntf', f).innerHTML = Object.entries(ev).map(([k, e]) => `<label class="ck"><input type="checkbox" value="${k}" ${n.subs.includes(k) ? 'checked' : ''}> ${esc(e.title)}${e.group === 'master' ? ' <span class="muted small">(мастеру)</span>' : ''}</label>`).join('');
+        }).catch(() => {});
+        $('[data-mxl]', f).onclick = async () => { try { maxLinkModal(await POST(`/api/users/${u.id}/max-link`), u.name); } catch (e) { toast(e.message, true); } };
+        const mu = $('[data-mxu]', f); if (mu) mu.onclick = async () => { await DEL(`/api/users/${u.id}/max-link`); close(); toast('MAX отключён'); navigate(); };
+      }
       const del = $('[data-delu]', f);
       if (del) del.onclick = async () => {
         if (!(await confirmBox(`Удалить сотрудника «${u.name}»? Он больше не сможет войти. Если у него есть заказы или начисления, его имя останется в старых документах.`, 'Удалить'))) return;
@@ -1208,6 +1290,12 @@ async function loadUpdateCard(page) {
     try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
     setTimeout(() => pollUpdate(page), 3000);
     loadUpdateCard(page);
+  if (s.max_token) GET('/api/max/status').then((st) => {
+    $('#maxStatus', page).innerHTML = st.ok && st.bot ? `<span style="color:var(--ok)">✓ Подключён бот <b>${esc(st.bot.name || '')}</b>${st.bot.username ? ' (@' + esc(st.bot.username) + ')' : ''}</span>${st.group ? ' · общий чат подключён' : ' · общий чат не подключён'}`
+      : `<span style="color:var(--bad)">Нет связи с MAX: ${esc(st.error || 'неизвестная ошибка')}</span>`;
+  }).catch(() => {});
+  $('#maxTest', page).onclick = async () => { try { await POST('/api/max/test'); toast('Сообщение отправлено в MAX'); } catch (e) { toast(e.message, true); } };
+  $('#digNow', page).onclick = async () => { await POST('/api/max/digest-now'); toast('Сводка отправлена'); };
   };
   $('#updBtn', box).onclick = async () => { if (await confirmBox('Обновить CRM до последней версии? Займёт 1–3 минуты, данные сохранятся.', 'Обновить')) start({}, 'Обновление запущено'); };
   $('#domBtn', box).onclick = async () => {
@@ -1235,6 +1323,18 @@ route(/^\/settings$/, async (page) => {
       <h2 style="margin-top:16px">Тексты документов</h2>
       <div class="field"><label>Условия в заказ-наряде и акте</label><textarea name="order_terms" rows="4">${esc(s.order_terms)}</textarea></div>
       <div class="field"><label>Условия гарантии</label><textarea name="warranty_terms" rows="4">${esc(s.warranty_terms)}</textarea></div></div>
+    <div class="card" style="border-color:rgba(59,158,255,.35)"><h2>MAX — бот для сотрудников</h2>
+      <ol class="small muted" style="padding-left:18px;margin-top:0">
+        <li>На платформе MAX для партнёров (business.max.ru) создайте чат-бота «${esc(s.company_name)}» и дождитесь модерации.</li>
+        <li>Скопируйте токен бота (Чат-боты → ⋮ → Настройки) и вставьте ниже, затем «Сохранить настройки».</li>
+        <li>Каждый сотрудник подключается сам: кнопка «Подключить мой MAX» внизу меню, или администратор — в карточке сотрудника.</li>
+        <li>Для общего чата: добавьте бота в групповой чат MAX и сделайте администратором — события начнут дублироваться туда.</li></ol>
+      <div class="field"><label>Токен бота MAX</label><input name="max_token" value="${esc(s.max_token)}" placeholder="вставьте токен" autocomplete="off"></div>
+      <div id="maxStatus" class="small muted" style="margin-bottom:10px">${s.max_token ? 'Проверяю подключение…' : 'Бот не подключён'}</div>
+      <div class="row"><div class="field"><label>Время вечерней сводки</label><input type="time" name="digest_time" value="${esc(s.digest_time || '19:00')}"></div>
+      <div class="field"><label>Общий чат сотрудников</label><select name="max_group_on"><option value="1" ${s.max_group_on !== '0' ? 'selected' : ''}>Дублировать события</option><option value="0" ${s.max_group_on === '0' ? 'selected' : ''}>Не дублировать</option></select></div></div>
+      <div class="inline"><button type="button" class="sm" id="maxTest">Отправить мне тест</button><button type="button" class="sm" id="digNow">Прислать сводку сейчас</button></div>
+      <div class="small muted" style="margin-top:8px">Руководству: заявки, записи, «готово», выдача с оплатой и долгом, остатки, итоги дня, сообщения мастеров. Мастерам: назначенные заказы с кнопками «В работе / Ждёт запчасти / Готово», переносы, записи на завтра. Кто что получает — в карточке сотрудника.</div></div>
     <div class="card"><h2>Telegram-бот</h2>
       <ol class="small muted" style="padding-left:18px;margin-top:0"><li>Создайте бота у @BotFather, скопируйте токен.</li><li>Создайте группу сотрудников, добавьте туда бота и напишите в группе <code>/id</code> — бот ответит ID чата.</li><li>Клиенты и мастера пишут боту /start и делятся номером — привязка по телефону.</li></ol>
       <div class="field"><label>Токен бота</label><input name="tg_token" value="${esc(s.tg_token)}" placeholder="123456:ABC…"></div>

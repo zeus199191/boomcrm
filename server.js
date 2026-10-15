@@ -5,7 +5,7 @@ const path = require('node:path');
 const { readBody, parseCookies, send, serveStatic, HttpError } = require('./lib/http');
 const { get } = require('./lib/db');
 const auth = require('./lib/auth');
-const { router, loadOrder, contractorLedger } = require('./lib/api');
+const { router, loadOrder, contractorLedger, botHandlers } = require('./lib/api');
 const print = require('./lib/print');
 const tg = require('./lib/telegram');
 
@@ -93,7 +93,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`CRM запущена: http://${HOST}:${PORT}`);
-  tg.start();
+  require('./lib/notify').start(botHandlers);
 });
 
 const shutdown = () => { server.close(); process.exit(0); };

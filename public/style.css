@@ -231,3 +231,11 @@ label.chip { cursor: pointer; margin: 0; }
 
 .tbl select[data-f=master_id] { min-width: 140px; }
 .bars { overflow: hidden; }
+
+/* Сообщения */
+.chatlog { height: calc(100vh - 290px); min-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px; }
+.bubble { max-width: 75%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+.bubble.in { align-self: flex-start; background: var(--panel2); border-bottom-left-radius: 4px; }
+.bubble.out { align-self: flex-end; background: var(--accentbg); border: 1px solid rgba(255,90,31,.3); border-bottom-right-radius: 4px; }
+.bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+@media (max-width: 860px) { #thread { order: -1; } .grid[style*="minmax(220px"] { grid-template-columns: 1fr !important; } .chatlog { height: 50vh; } }

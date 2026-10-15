@@ -68,6 +68,20 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
 fi
 c_ok "Node.js $(node -v)"
 
+# --- Корневой сертификат Минцифры (нужен для Bot API мессенджера MAX) ---
+RU_CA=/usr/local/share/ca-certificates/russian_trusted_ca.crt
+if [ ! -s "$RU_CA" ]; then
+  TMPCA=$(mktemp)
+  if curl -fsSL --max-time 30 https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt -o "$TMPCA.root" \
+     && curl -fsSL --max-time 30 https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt -o "$TMPCA.sub"; then
+    cat "$TMPCA.root" "$TMPCA.sub" > "$RU_CA" && update-ca-certificates >/dev/null 2>&1 || true
+    c_ok "Сертификат Минцифры установлен (для MAX)"
+  else
+    c_inf "Сертификат Минцифры скачать не удалось — MAX будет работать через резервный адрес API"
+  fi
+  rm -f "$TMPCA" "$TMPCA.root" "$TMPCA.sub"
+fi
+
 # --- Пользователь и файлы ---
 id boomcrm >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin boomcrm
 mkdir -p "$APP_DIR" "$DATA_DIR"
@@ -91,6 +105,7 @@ Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
 Environment=CRM_DATA=$DATA_DIR
 Environment=TZ=$TZ_NAME
+Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/usr/bin/node --max-old-space-size=256 server.js
 Restart=always
 RestartSec=3
