@@ -40,9 +40,11 @@ if ! swapon --show | grep -q .; then
 fi
 
 c_inf "Устанавливаю системные пакеты (пару минут)…"
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
+exec </dev/null
+APTOPT="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates gnupg nginx ufw cron rsync >/dev/null
+apt-get install -y -qq $APTOPT curl ca-certificates gnupg nginx ufw cron rsync >/dev/null
 
 # --- Node.js 22 LTS (в нём встроен SQLite, внешние модули не нужны) ---
 NODE_MAJOR=0
@@ -52,7 +54,7 @@ command -v node >/dev/null && NODE_MINOR=$(node -p 'process.versions.node.split(
 if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 13 ]; }; then
   c_inf "Устанавливаю Node.js 22"
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-  apt-get install -y -qq nodejs >/dev/null
+  apt-get install -y -qq $APTOPT nodejs >/dev/null
 fi
 c_ok "Node.js $(node -v)"
 
@@ -142,7 +144,7 @@ c_ok "Резервная копия базы — каждую ночь, хран
 # --- HTTPS ---
 if [ -n "$DOMAIN" ]; then
   c_inf "Получаю SSL-сертификат для $DOMAIN"
-  apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
+  apt-get install -y -qq $APTOPT certbot python3-certbot-nginx >/dev/null
   if [ -n "$EMAIL" ]; then EM="-m $EMAIL"; else EM="--register-unsafely-without-email"; fi
   if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos $EM --redirect -q; then
     c_ok "HTTPS включён, сертификат будет продлеваться автоматически"
