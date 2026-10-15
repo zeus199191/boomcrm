@@ -42,7 +42,10 @@ fi
 c_inf "Устанавливаю системные пакеты (пару минут)…"
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
 exec </dev/null
-APTOPT="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+APTOPT="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o DPkg::Lock::Timeout=300"
+# если прошлая установка была прервана — довести dpkg до порядка
+systemctl stop unattended-upgrades 2>/dev/null || true
+dpkg --configure -a $APTOPT >/dev/null 2>&1 || true
 apt-get update -qq
 apt-get install -y -qq $APTOPT curl ca-certificates gnupg nginx ufw cron rsync >/dev/null
 
