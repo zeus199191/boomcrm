@@ -228,3 +228,6 @@ pre.code { background: var(--bg); border: 1px solid var(--line); border-radius: 
 .chip input[type=radio] + * { pointer-events: none; }
 label.chip { cursor: pointer; margin: 0; }
 @media (max-width: 860px) { .jwrap { max-height: none; } .jr { min-width: 900px; } }
+
+.tbl select[data-f=master_id] { min-width: 140px; }
+.bars { overflow: hidden; }

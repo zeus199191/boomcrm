@@ -377,6 +377,33 @@ route(/^\/orders$/, async (page, query) => {
   await load();
 });
 
+// ---------- Товар в заказ: со склада или от поставщика ----------
+function productAddModal(o, p, suppliers, reload) {
+  const m = modal('Товар в заказ', `
+    <div style="margin-bottom:10px"><b>${esc(p.name)}</b><div class="small muted">На складе: <b id="stk">${num(p.stock)} ${esc(p.unit)}</b> · розница ${rub(p.price)}${p.cost ? ' · закупка ' + rub(p.cost) : ''}</div></div>
+    <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
+    <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" value="${p.price}" step="any"></div></div>
+    <div class="row"><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада —')}</select></div>
+    <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${p.cost || ''}" step="any"></div></div>
+    <div class="small" id="hint"></div>`,
+  { submit: 'Добавить', onSubmit: async (d) => {
+    const qty = +d.qty || 1;
+    if (!d.contractor_id && qty > p.stock && !(await confirmBox(`На складе ${num(p.stock)}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
+    if (d.contractor_id && qty > Math.max(p.stock, 0) && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг поставщику', true); return false; }
+    await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty, price: d.price, cost: d.cost, contractor_id: d.contractor_id || null });
+    reload();
+  } });
+  const f = m.form;
+  const hint = () => {
+    const qty = +f.qty.value || 0; const miss = Math.max(0, qty - Math.max(p.stock, 0));
+    const sup = f.contractor_id.selectedOptions[0];
+    $('#hint', f).innerHTML = !miss ? (f.contractor_id.value ? `<span class="muted">Товар есть на складе — долг не возникнет, поставщик будет указан в заказе.</span>` : '')
+      : f.contractor_id.value ? `<span style="color:var(--warn)">Не хватает ${num(miss)} — они будут оприходованы от «${esc(sup.textContent)}», и появится долг ${rub(miss * (+f.cost.value || 0))}.</span>`
+      : `<span style="color:var(--bad)">На складе не хватает ${num(miss)}. Выберите поставщика, чтобы учесть долг перед ним.</span>`;
+  };
+  ['input', 'change'].forEach((ev) => f.addEventListener(ev, hint)); hint();
+}
+
 // ---------- Приёмка автомобиля ----------
 function acceptCard(o, office) {
   const L = S.me.accept_lists; const a = o.accept || { kit: [], works: [] };
@@ -424,7 +451,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const t = o.totals;
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
   const itemRows = (list, kind) => list.map((i) => `<tr data-item="${i.id}">
-    <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}</td>
+    <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}${i.contractor_name ? `<div class="small muted">🚚 ${esc(i.contractor_name)}${i.supplied_qty ? ` · в долг ${num(i.supplied_qty)} шт` : ''}</div>` : ''}</td>
     ${kind === 'service' ? `<td data-l="Мастер">${office ? `<select data-f="master_id">${opts(masters().map((u) => [u.id, u.name]), i.master_id, '—')}</select>` : esc(i.master_name || '—')}</td>` : ''}
     <td data-l="Кол-во" style="width:90px">${office ? `<input type="number" step="any" min="0" value="${i.qty}" data-f="qty">` : i.qty}</td>
     <td data-l="Цена" style="width:120px">${office ? `<input type="number" step="any" min="0" value="${i.price}" data-f="price">` : num(i.price)}</td>
@@ -455,7 +482,8 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
       <div style="margin-top:10px;gap:8px;justify-content:flex-end"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
     </div>
-    ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}</div>` : ''}
+    ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
   </div><div>
     <div class="card"><h2>Клиент и автомобиль</h2>${o.contractor_name ? `<div class="field"><span class="badge">🤝 ${esc(o.contractor_name)}</span></div>` : ''}
       <div class="field"><b>${o.client_id && office ? `<a href="#/clients/${o.client_id}">${esc(o.client_name)}</a>` : esc(o.client_name || '—')}</b>
@@ -484,6 +512,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const reload = () => navigate();
   $$('.pipe button', page).forEach((b) => (b.onclick = async () => {
     const st = b.dataset.st;
+    if (st === 'issued' && svc.some((i) => !i.master_id) && !o.master_id && !(await confirmBox('У части работ не указан мастер — по ним зарплата не начислится. Всё равно выдать?', 'Выдать'))) return;
     if (st === 'issued' && t.due > 0.5 && !(await confirmBox(`По заказу не оплачено ${rub(t.due)}. Всё равно выдать автомобиль?`, 'Выдать'))) return;
     if (st === 'cancelled' && !(await confirmBox('Отменить заказ?', 'Отменить заказ'))) return;
     try { await POST(`/api/orders/${o.id}/status`, { status: st }); toast('Статус: ' + S.me.statuses[st]); reload(); } catch (e) { toast(e.message, true); }
@@ -535,10 +564,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   autocomplete($('#addPrd', page), {
     search: (q) => GET('/api/products' + qs({ q })).then((r) => r.slice(0, 15)),
     render: (p) => `<div>${esc(p.name)} ${p.sku ? `<span class="s">${esc(p.sku)}</span>` : ''}</div><div class="s">${rub(p.price)} · на складе ${num(p.stock)} ${esc(p.unit)}</div>`,
-    onPick: async (p) => {
-      if (p.stock <= 0 && !(await confirmBox(`«${p.name}» нет на складе (остаток ${num(p.stock)}). Всё равно добавить?`, 'Добавить'))) return;
-      try { await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty: 1 }); reload(); } catch (e) { toast(e.message, true); }
-    },
+    onPick: (p) => productAddModal(o, p, contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner'), reload),
   });
   const payModal = (refund) => modal(refund ? 'Возврат клиенту' : 'Принять оплату', `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required value="${refund ? '' : Math.max(t.due, 0)}"></div>
@@ -1037,7 +1063,7 @@ route(/^\/finance$/, async (page, query) => {
   const inc = r.byMethod.filter((x) => x.direction === 'in').reduce((s, x) => s + x.s, 0);
   const exp = r.byMethod.filter((x) => x.direction === 'out').reduce((s, x) => s + x.s, 0);
   const s = r.sales; const revenue = s.services + s.goods; const goodsMargin = s.goods - s.goods_cost;
-  const maxDay = Math.max(1, ...r.daily.map((d) => Math.max(d.inc, d.exp)));
+  const maxDay = Math.max(1, ...r.daily.map((d) => d.inc + d.exp));
   const byM = (dir) => Object.entries(METHODS).map(([k, t]) => [t, r.byMethod.find((x) => x.direction === dir && x.method === k)?.s || 0]);
   const catList = (dir) => r.byCategory.filter((x) => x.direction === dir);
   const maxCat = Math.max(1, ...r.byCategory.map((x) => x.s));
@@ -1047,6 +1073,11 @@ route(/^\/finance$/, async (page, query) => {
     <div class="kpi"><div class="l">Расходы</div><div class="v bad">${rub(exp)}</div></div>
     <div class="kpi"><div class="l">Сальдо периода</div><div class="v ${inc - exp >= 0 ? 'acc' : 'bad'}">${rub(inc - exp)}</div></div>
     <div class="kpi"><div class="l">Средний чек</div><div class="v">${rub(s.orders ? revenue / s.orders : 0)}</div></div></div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <a class="kpi" href="#/contractors" style="color:inherit;text-decoration:none"><div class="l">Долг перед контрагентами</div><div class="v bad">${rub(r.contractors.we_owe)}</div></a>
+    <a class="kpi" href="#/contractors" style="color:inherit;text-decoration:none"><div class="l">Контрагенты должны нам</div><div class="v ok">${rub(r.contractors.they_owe)}</div></a>
+    <div class="kpi"><div class="l">Склад по закупке</div><div class="v">${rub(r.stockValue.cost)}</div></div>
+    <div class="kpi"><div class="l">Склад по рознице</div><div class="v">${rub(r.stockValue.retail)}</div></div></div>
   <div class="grid g-main"><div>
     <div class="card"><h2>Движение денег по дням</h2>${r.daily.length ? `<div class="bars">${r.daily.map((d) => `<div class="b" data-t="${dmy(d.d)}\nприход ${rub(d.inc)}\nрасход ${rub(d.exp)}"><i class="in" style="height:${d.inc / maxDay * 130}px"></i><i class="out" style="height:${d.exp / maxDay * 130}px"></i></div>`).join('')}</div>
       <div class="legend"><span><i style="background:var(--accent)"></i>Приход</span><span><i style="background:#4a5160"></i>Расход</span></div>` : '<div class="empty">Нет движения денег</div>'}</div>
@@ -1095,7 +1126,7 @@ route(/^\/salary$/, async (page, query) => {
       ${isAdmin() && u.due > 0 ? `<button class="sm primary" data-pay="${u.id}" data-due="${u.due}">Выплатить ${rub(u.due)}</button>` : ''}</div>
       <div class="grid g4"><div class="kpi"><div class="l">Работы</div><div class="v" style="font-size:18px">${rub(u.works_sum)}</div></div><div class="kpi"><div class="l">Начислено</div><div class="v acc" style="font-size:18px">${rub(u.accrued)}</div></div>
       <div class="kpi"><div class="l">Выплачено</div><div class="v" style="font-size:18px">${rub(u.paid)}</div></div><div class="kpi"><div class="l">К выплате</div><div class="v ${u.due > 0 ? 'ok' : ''}" style="font-size:18px">${rub(u.due)}</div></div></div>
-      ${u.works.length ? `<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Выполненные работы (${u.works.length})</summary><table class="tbl" style="margin-top:6px"><tbody>${u.works.map((w) => `<tr><td class="nowrap">${dmy(w.issued_at)}</td><td><a href="#/orders/${w.order_id}">${orderNo(w.order_id)}</a></td><td>${esc(w.name)}</td><td class="r mono">${rub(w.sum)}</td><td class="r mono muted">${rub(w.sum * (u.salary_percent || 0) / 100)}</td></tr>`).join('')}</tbody></table></details>` : ''}
+      ${u.works.length ? `<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Выполненные работы (${u.works.length})</summary><table class="tbl" style="margin-top:6px"><tbody>${u.works.map((w) => `<tr><td class="nowrap">${dmy(w.issued_at)}</td><td><a href="#/orders/${w.order_id}">${orderNo(w.order_id)}</a></td><td>${esc(w.name)}</td><td class="r mono">${rub(w.sum)}</td><td class="r muted">${w.percent}%</td><td class="r mono">${rub(w.amount)}</td></tr>`).join('')}</tbody></table></details>` : ''}
     </div>`).join('') : '<div class="card empty">Нет начислений за период</div>'}`;
   bindPeriod(page, (f, t) => go('/salary' + qs({ from: f, to: t })));
   $$('[data-pay]', page).forEach((b) => (b.onclick = () => modal('Выплата зарплаты', `
