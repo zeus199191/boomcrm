@@ -28,6 +28,7 @@ const S = { me: null, staff: [], services: null };
 const role = () => S.me.user.role;
 const isOffice = () => role() !== 'master';
 const isAdmin = () => role() === 'admin';
+const isDayOff = (ds) => (S.me.days_off || []).includes(new Date(String(ds).slice(0, 10) + 'T12:00').getDay());
 const stBadge = (st) => `<span class="badge st-${st}">${esc(S.me.statuses[st] || st)}</span>`;
 
 function debounce(fn, ms = 250) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -334,6 +335,7 @@ async function newOrderModal(pre = {}) {
       <div class="field"><label>Мастер</label><select name="master_id">${opts(masters().map((u) => [u.id, u.name]), pre.master_id, '—')}</select></div></div>
     <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>`,
   { wide: true, submit: 'Создать заказ', onSubmit: async (d) => {
+    if (d.scheduled_at && isDayOff(d.scheduled_at) && !(await confirmBox(`${dmy(d.scheduled_at)} — выходной день. Записать в виде исключения?`, 'Да, записать'))) return false;
     const body = { client_id: d.client_id || null, lead_id: d.lead_id || null, car_id: d.car_id || null, scheduled_at: d.scheduled_at || null, end_date: d.end_date || null,
       duration_min: Math.round((+d.duration_h || 2) * 60), bay: d.bay, master_id: d.master_id, complaint: d.complaint };
     if (!body.client_id) {
@@ -659,16 +661,17 @@ route(/^\/calendar$/, async (page, query) => {
       };
       const noteCard = (n) => `<div class="jc note" data-note="${n.id}" style="--c:${n.color || '#ffe599'}">${esc(n.text)}</div>`;
       box.innerHTML = `<div class="jwrap"><table class="jr"><thead><tr><th class="jd">Дата</th>${cols.map((c) => `<th>${c ? esc(c) : 'Заметки дня'}</th>`).join('')}</tr></thead><tbody>
-        ${days.map((ds) => { const x = new Date(ds + 'T00:00'); const we2 = x.getDay() === 0 || x.getDay() === 6;
-          return `<tr class="${ds === today() ? 'today' : ''} ${we2 ? 'we' : ''}"><td class="jd"><b>${pad(x.getDate())}.${pad(x.getMonth() + 1)}</b><div>${DOW[x.getDay()]}</div></td>
+        ${days.map((ds) => { const x = new Date(ds + 'T00:00'); const off = isDayOff(ds);
+          return `<tr class="${ds === today() ? 'today' : ''} ${off ? 'off' : ''}"><td class="jd"><b>${pad(x.getDate())}.${pad(x.getMonth() + 1)}</b><div>${DOW[x.getDay()]}</div>${off ? '<div class="offl">выходной</div>' : ''}</td>
           ${cols.map((c) => `<td class="jcell" data-d="${ds}" data-bay="${esc(c === 'Без поста' ? '' : c)}">${rows.filter((r) => inCol(r.bay, c) && r.scheduled_at.slice(0, 10) <= ds && (r.end_date || r.scheduled_at.slice(0, 10)) >= ds).map((r) => orderCard(r, ds)).join('')}${notes.filter((n) => n.date === ds && (c === '' ? !n.bay : n.bay === c)).map(noteCard).join('')}</td>`).join('')}</tr>`; }).join('')}
         </tbody></table></div>`;
       const reloadJ = () => render();
       $$('[data-note]', box).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); if (!isOffice()) return; const n = notes.find((x) => x.id === +e.dataset.note); noteModal(n, reloadJ); }));
       if (isOffice()) $$('.jcell', box).forEach((td) => (td.onclick = () => {
         const ds = td.dataset.d, bay = td.dataset.bay;
-        const m = modal(`${dmy(ds)}${bay ? ' · ' + bay : ''}`, '<div class="grid" style="gap:10px"><button type="button" class="primary" data-a="o" style="justify-content:center;padding:12px">🚗 Записать автомобиль</button><button type="button" data-a="n" style="justify-content:center;padding:12px">📝 Заметка в ячейку</button></div>', { footer: '<button type="button" data-x>Отмена</button>' });
+        const m = modal(`${dmy(ds)}${bay ? ' · ' + bay : ''}`, (isDayOff(ds) ? '<div class="offwarn">⚠️ Это выходной день. Запись можно сделать только как исключение.</div>' : '') + '<div class="grid" style="gap:10px"><button type="button" class="primary" data-a="o" style="justify-content:center;padding:12px">🚗 Записать автомобиль</button><button type="button" data-a="n" style="justify-content:center;padding:12px">📝 Заметка в ячейку</button></div>', { footer: '<button type="button" data-x>Отмена</button>' });
         $('[data-a=o]', m.el).onclick = () => { m.close(); newOrderModal({ scheduled_at: `${ds}T11:00`, bay }); };
+        if (isDayOff(ds)) $('[data-a=o]', m.el).textContent = '🚗 Записать как исключение';
         $('[data-a=n]', m.el).onclick = () => { m.close(); noteModal({ date: ds, bay }, reloadJ); };
       }));
     } else {
@@ -690,6 +693,7 @@ route(/^\/calendar$/, async (page, query) => {
         if (top > 0 && top < hours.length * 2 * SLOT) $$('.cbody', box).forEach((c) => c.insertAdjacentHTML('beforeend', `<div class="now" style="top:${top}px"></div>`));
       }
       if (isOffice()) $$('.slot', box).forEach((s) => (s.onclick = () => newOrderModal({ scheduled_at: `${date}T${s.dataset.t}`, bay: s.dataset.bay === 'Без поста' ? '' : s.dataset.bay })));
+      if (isDayOff(date)) box.insertAdjacentHTML('afterbegin', '<div class="offwarn">⚠️ Выходной день — запись возможна только как исключение</div>');
     }
     $$('[data-id]', box).forEach((e) => (e.onclick = (ev) => { ev.stopPropagation(); go('/orders/' + e.dataset.id); }));
     const shift = (n) => { const x = new Date(date + 'T00:00'); x.setDate(x.getDate() + n * (view === 'journal' ? 7 : 1)); date = ymd(x); render(); };
@@ -1290,6 +1294,10 @@ async function loadUpdateCard(page) {
     try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
     setTimeout(() => pollUpdate(page), 3000);
     loadUpdateCard(page);
+  $$('#doff input', page).forEach((cb) => cb.addEventListener('change', () => {
+    cb.parentElement.classList.toggle('on', cb.checked);
+    $('input[name=days_off]', page).value = $$('#doff input:checked', page).map((x) => x.value).join(',');
+  }));
   if (s.max_token) GET('/api/max/status').then((st) => {
     $('#maxStatus', page).innerHTML = st.ok && st.bot ? `<span style="color:var(--ok)">✓ Подключён бот <b>${esc(st.bot.name || '')}</b>${st.bot.username ? ' (@' + esc(st.bot.username) + ')' : ''}</span>${st.group ? ' · общий чат подключён' : ' · общий чат не подключён'}`
       : `<span style="color:var(--bad)">Нет связи с MAX: ${esc(st.error || 'неизвестная ошибка')}</span>`;
@@ -1319,6 +1327,7 @@ route(/^\/settings$/, async (page) => {
     <div class="card"><h2>Запись</h2>
       <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
       <div class="field"><label>Наценка при безналичной оплате, %</label><input type="number" name="cashless_markup" min="0" max="50" step="any" value="${esc(s.cashless_markup)}"></div>
+      <div class="field"><label>Выходные дни (запись возможна только как исключение)</label><div class="chips" id="doff">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label class="chip ${(s.days_off || '0').split(',').includes(String(d)) ? 'on' : ''}"><input type="checkbox" value="${d}" hidden ${(s.days_off || '0').split(',').includes(String(d)) ? 'checked' : ''}>${DOW[d]}</label>`).join('')}</div><input type="hidden" name="days_off" value="${esc(s.days_off ?? '0')}"></div>
       <div class="row"><div class="field"><label>Начало дня</label><input type="time" name="work_start" value="${esc(s.work_start)}"></div><div class="field"><label>Конец дня</label><input type="time" name="work_end" value="${esc(s.work_end)}"></div></div>
       <h2 style="margin-top:16px">Тексты документов</h2>
       <div class="field"><label>Условия в заказ-наряде и акте</label><textarea name="order_terms" rows="4">${esc(s.order_terms)}</textarea></div>

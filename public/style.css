@@ -205,11 +205,13 @@ pre.code { background: var(--bg); border: 1px solid var(--line); border-radius: 
 .jr { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1100px; table-layout: fixed; }
 .jr th { position: sticky; top: 0; z-index: 3; background: var(--panel2); padding: 9px 8px; font-weight: 650; border-bottom: 1px solid var(--line2); border-right: 1px solid var(--line); text-align: center; }
 .jr td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: top; padding: 4px; }
-.jr .jd { position: sticky; left: 0; z-index: 2; background: var(--panel2); width: 64px; text-align: center; font-size: 12px; color: var(--muted); }
+.jr .jd { position: sticky; left: 0; z-index: 2; background: var(--panel2); width: 78px; text-align: center; font-size: 12px; color: var(--muted); }
 .jr th.jd { z-index: 4; }
 .jr .jd b { display: block; color: var(--text); font-size: 14px; }
-.jr tr.we td { background: rgba(255,255,255,.025); }
-.jr tr.we .jd { color: #f28b8b; }
+.jr tr.off td { background: repeating-linear-gradient(135deg, rgba(239,68,68,.05) 0 10px, rgba(239,68,68,.09) 10px 20px); }
+.jr tr.off .jd { color: #f28b8b; background: #2a1d21; }
+.jr .offl { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #f28b8b; margin-top: 2px; }
+.offwarn { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: #f8b4b4; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
 .jr tr.today td { background: rgba(255,90,31,.07); }
 .jr tr.today .jd { background: var(--accent); color: #fff; }
 .jr tr.today .jd b { color: #fff; }
@@ -239,3 +241,5 @@ label.chip { cursor: pointer; margin: 0; }
 .bubble.out { align-self: flex-end; background: var(--accentbg); border: 1px solid rgba(255,90,31,.3); border-bottom-right-radius: 4px; }
 .bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
 @media (max-width: 860px) { #thread { order: -1; } .grid[style*="minmax(220px"] { grid-template-columns: 1fr !important; } .chatlog { height: 50vh; } }
+
+#doff .chip { min-width: 40px; justify-content: center; }
