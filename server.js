@@ -3,6 +3,8 @@
 const http = require('node:http');
 const path = require('node:path');
 const { readBody, parseCookies, send, serveStatic, HttpError } = require('./lib/http');
+// Часовой пояс студии — Иркутск (влияет на даты в базе, сводки и печать)
+process.env.TZ = process.env.CRM_TZ || 'Asia/Irkutsk';
 const { get } = require('./lib/db');
 const auth = require('./lib/auth');
 const { router, loadOrder, contractorLedger, botHandlers } = require('./lib/api');
@@ -52,7 +54,7 @@ const server = http.createServer(async (req, res) => {
       if (user.role === 'master') throw new HttpError(403, 'Недостаточно прав');
       const c = get('SELECT * FROM contractors WHERE id=?', +sv[1]);
       if (!c) throw new HttpError(404, 'Контрагент не найден');
-      const today = new Date().toISOString().slice(0, 10);
+      const n = new Date(); const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
       const from = url.searchParams.get('from') || today.slice(0, 8) + '01', to = url.searchParams.get('to') || today;
       const prev = new Date(from + 'T12:00:00'); prev.setDate(prev.getDate() - 1);
       const before = from > '0001' ? contractorLedger(c.id, '0000-01-01', prev.toISOString().slice(0, 10)) : [];

@@ -9,7 +9,16 @@ const rub = (n) => (Math.round((+n || 0) * 100) / 100).toLocaleString('ru-RU', {
 const num = (n) => (Math.round((+n || 0) * 100) / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 const pad = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const today = () => ymd(new Date());
+// Текущее время студии (часовой пояс из настроек CRM, по умолчанию Иркутск) — независимо от часового пояса компьютера
+function nowTz() {
+  const tz = S.me && S.me.tz; if (!tz) return new Date();
+  try {
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+    const g = (t) => +p.find((x) => x.type === t).value;
+    return new Date(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second'));
+  } catch { return new Date(); }
+}
+const today = () => ymd(nowTz());
 const dmy = (s) => (s ? s.slice(0, 10).split('-').reverse().join('.') : '');
 const dt = (s) => (s ? dmy(s) + (s.length > 10 ? ' ' + s.slice(11, 16) : '') : '');
 const orderNo = (id) => 'БС-' + String(id).padStart(5, '0');
@@ -281,7 +290,7 @@ async function services() { if (!S.services) S.services = await GET('/api/servic
 // ================= Главная =================
 route(/^\/$/, async (page) => {
   const d = await GET('/api/dashboard');
-  const d0 = new Date();
+  const d0 = nowTz();
   const stCounts = Object.fromEntries(d.by_status.map((x) => [x.status, x.n]));
   page.innerHTML = `<div class="topbar"><div><h1>${d0.getHours() < 12 ? 'Доброе утро' : d0.getHours() < 18 ? 'Добрый день' : 'Добрый вечер'}, ${esc(S.me.user.name.split(' ')[0])}</h1>
     <div class="muted">${DOW[d0.getDay()]}, ${d0.getDate()} ${MONTHS[d0.getMonth()]}</div></div><div class="sp"></div>
@@ -689,7 +698,7 @@ route(/^\/calendar$/, async (page, query) => {
             <b>${r.scheduled_at.slice(11, 16)} ${esc(r.client || '')}</b>${esc(carStr(r))}${r.master ? `<div class="muted">${esc(r.master)}</div>` : ''}${r.complaint ? `<div class="muted">${esc(r.complaint)}</div>` : ''}</div>`).join('')}
         </div></div>`).join('')}</div>`;
       if (date === today()) {
-        const n = new Date(); const top = ((n.getHours() + n.getMinutes() / 60) - Math.floor(ws)) * 2 * SLOT;
+        const n = nowTz(); const top = ((n.getHours() + n.getMinutes() / 60) - Math.floor(ws)) * 2 * SLOT;
         if (top > 0 && top < hours.length * 2 * SLOT) $$('.cbody', box).forEach((c) => c.insertAdjacentHTML('beforeend', `<div class="now" style="top:${top}px"></div>`));
       }
       if (isOffice()) $$('.slot', box).forEach((s) => (s.onclick = () => newOrderModal({ scheduled_at: `${date}T${s.dataset.t}`, bay: s.dataset.bay === 'Без поста' ? '' : s.dataset.bay })));
@@ -1106,7 +1115,7 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
 
 // ================= Финансы =================
 function periodBar(page, from, to, onChange) {
-  const t = new Date();
+  const t = nowTz();
   const presets = {
     'Сегодня': [today(), today()],
     'Неделя': [ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - ((t.getDay() + 6) % 7))), today()],
@@ -1118,7 +1127,7 @@ function periodBar(page, from, to, onChange) {
     <input type="date" id="pf" value="${from}" style="width:auto"> — <input type="date" id="pt" value="${to}" style="width:auto"></div>`;
 }
 function bindPeriod(page, cb) {
-  const t = new Date();
+  const t = nowTz();
   const presets = {
     'Сегодня': [today(), today()],
     'Неделя': [ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - ((t.getDay() + 6) % 7))), today()],

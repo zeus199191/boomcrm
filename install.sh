@@ -13,7 +13,7 @@ set -euo pipefail
 
 DOMAIN="${1:-}"
 EMAIL="${2:-}"
-TZ_NAME="${TZ_NAME:-Asia/Yekaterinburg}"
+TZ_NAME="${TZ_NAME:-Asia/Irkutsk}"
 APP_DIR=/opt/boomcrm
 DATA_DIR=/var/lib/boomcrm
 PORT=3000
@@ -112,6 +112,7 @@ Environment=PORT=$PORT
 Environment=HOST=127.0.0.1
 Environment=CRM_DATA=$DATA_DIR
 Environment=TZ=$TZ_NAME
+Environment=CRM_TZ=$TZ_NAME
 Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/usr/bin/node --max-old-space-size=256 server.js
 Restart=always
