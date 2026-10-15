@@ -1147,16 +1147,27 @@ route(/^\/users$/, async (page) => {
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
     <div class="row"><div class="field"><label>Имя *</label><input name="name" required value="${esc(u.name || '')}"></div>
-    <div class="field"><label>Логин *</label><input name="login" required value="${esc(u.login || '')}" ${u.id ? 'disabled' : ''} autocapitalize="off"></div></div>
+    <div class="field"><label>Логин *</label><input name="login" required value="${esc(u.login || '')}" autocapitalize="off" pattern="[a-zA-Z0-9._\-]{3,32}" title="3–32 символа: латинские буквы, цифры, точка, дефис, подчёркивание"></div></div>
     <div class="row"><div class="field"><label>Роль</label><select name="role">${opts(Object.entries(ROLES), u.role)}</select></div><div class="field"><label>Телефон</label><input name="phone" value="${esc(u.phone || '')}"></div></div>
     <div class="row"><div class="field"><label>% от работ</label><input name="salary_percent" type="number" step="any" min="0" max="100" value="${u.salary_percent || 0}"></div>
     <div class="field"><label>% от товаров</label><input name="goods_percent" type="number" step="any" min="0" max="100" value="${u.goods_percent || 0}"></div></div>
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
     <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
     ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>` : ''}`,
-  { onSubmit: async (d) => { if (u.id) await PUT('/api/users/' + u.id, d); else await POST('/api/users', d); S.staff = await GET('/api/staff'); toast('Сохранено'); navigate(); },
+  { footer: u.id && u.id !== S.me.user.id ? '<button type="button" class="ghost danger" data-delu style="margin-right:auto">Удалить сотрудника</button><button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>' : undefined,
+    onSubmit: async (d) => {
+      if (u.id) await PUT('/api/users/' + u.id, d); else await POST('/api/users', d);
+      S.staff = await GET('/api/staff');
+      if (u.id === S.me.user.id) S.me = await GET('/api/me');
+      toast('Сохранено'); renderShell(); navigate();
+    },
     // руководителям начисления ведутся вне CRM, мастерам — 50% от работ
-    onOpen: (f) => { f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
+    onOpen: (f, close) => {
+      const del = $('[data-delu]', f);
+      if (del) del.onclick = async () => {
+        if (!(await confirmBox(`Удалить сотрудника «${u.name}»? Он больше не сможет войти. Если у него есть заказы или начисления, его имя останется в старых документах.`, 'Удалить'))) return;
+        try { const r = await DEL('/api/users/' + u.id); close(); S.staff = await GET('/api/staff'); toast(r.mode === 'archived' ? 'Сотрудник удалён (история заказов сохранена)' : 'Сотрудник удалён'); navigate(); } catch (e) { toast(e.message, true); }
+      }; f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
 });
