@@ -69,18 +69,25 @@ fi
 c_ok "Node.js $(node -v)"
 
 # --- Корневой сертификат Минцифры (нужен для Bot API мессенджера MAX) ---
-RU_CA=/usr/local/share/ca-certificates/russian_trusted_ca.crt
-if [ ! -s "$RU_CA" ]; then
-  TMPCA=$(mktemp)
-  if curl -fsSL --max-time 30 https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt -o "$TMPCA.root" \
-     && curl -fsSL --max-time 30 https://gu-st.ru/content/lending/russian_trusted_sub_ca_pem.crt -o "$TMPCA.sub"; then
-    cat "$TMPCA.root" "$TMPCA.sub" > "$RU_CA" && update-ca-certificates >/dev/null 2>&1 || true
-    c_ok "Сертификат Минцифры установлен (для MAX)"
-  else
-    c_inf "Сертификат Минцифры скачать не удалось — MAX будет работать через резервный адрес API"
+# Ставим только проверенные PEM-файлы и всегда проверяем, что системный набор сертификатов цел.
+CA_DIR=/usr/local/share/ca-certificates
+rm -f "$CA_DIR/russian_trusted_ca.crt"   # файл старой версии установщика
+for n in root sub; do
+  F="$CA_DIR/russian_trusted_${n}_ca.crt"
+  if [ ! -s "$F" ]; then
+    T=$(mktemp)
+    if curl -fsSL --max-time 30 "https://gu-st.ru/content/lending/russian_trusted_${n}_ca_pem.crt" -o "$T" && openssl x509 -noout -in "$T" 2>/dev/null; then
+      install -m 644 "$T" "$F"
+    fi
+    rm -f "$T"
   fi
-  rm -f "$TMPCA" "$TMPCA.root" "$TMPCA.sub"
+done
+update-ca-certificates >/dev/null 2>&1 || true
+if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+  apt-get install -y -qq --reinstall ca-certificates >/dev/null 2>&1 || true
+  update-ca-certificates --fresh >/dev/null 2>&1 || true
 fi
+[ -s "$CA_DIR/russian_trusted_root_ca.crt" ] && c_ok "Сертификат Минцифры установлен (для MAX)" || c_inf "Сертификат Минцифры не установлен — MAX будет работать через резервный адрес API"
 
 # --- Пользователь и файлы ---
 id boomcrm >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin boomcrm
@@ -169,8 +176,18 @@ EMAIL="$(sed -n 2p "$REQ" | tr -cd 'a-zA-Z0-9.@_+-')"
 rm -f "$REQ"
 {
   echo "=== Старт: $(date '+%d.%m.%Y %H:%M') ==="
-  curl -fsSL https://raw.githubusercontent.com/zeus199191/boomcrm/main/go.sh | bash -s -- $DOMAIN $EMAIL
-  echo "=== Готово (код $?): $(date '+%d.%m.%Y %H:%M') ==="
+  if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+    echo "Восстанавливаю сертификаты системы…"
+    update-ca-certificates --fresh >/dev/null 2>&1 || apt-get install -y -qq --reinstall ca-certificates >/dev/null 2>&1
+  fi
+  GO=$(mktemp)
+  if curl -fsSL https://raw.githubusercontent.com/zeus199191/boomcrm/main/go.sh -o "$GO"; then
+    bash "$GO" $DOMAIN $EMAIL; CODE=$?
+  else
+    CODE=1; echo "Не удалось скачать обновление"
+  fi
+  rm -f "$GO"
+  [ "$CODE" = 0 ] && echo "=== Готово: $(date '+%d.%m.%Y %H:%M') ===" || echo "=== Ошибка (код $CODE): $(date '+%d.%m.%Y %H:%M') ==="
 } > "$LOG" 2>&1 < /dev/null
 chown boomcrm:boomcrm "$LOG"
 EOF2

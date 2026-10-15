@@ -1275,7 +1275,7 @@ async function loadUpdateCard(page) {
   const box = $('#updCard', page); if (!box) return;
   let u;
   try { u = await GET('/api/admin/update'); } catch (e) { box.innerHTML = '<h2>Обновление и домен</h2><div class="muted">Сервер перезапускается, подождите…</div>'; setTimeout(() => pollUpdate(page), 4000); return; }
-  const running = u.pending || (u.log && !/=== Готово/.test(u.log) && /=== Старт/.test(u.log));
+  const running = u.pending || (u.log && !/=== (Готово|Ошибка)/.test(u.log) && /=== Старт/.test(u.log));
   box.innerHTML = `<h2>Обновление и домен</h2>
     <div class="small muted" style="margin-bottom:10px">Версия CRM: <b>${esc(u.version)}</b>${u.domain ? ` · домен: <b>${esc(u.domain)}</b>` : ' · домен не подключён'}</div>
     ${u.updater ? '' : '<div class="small" style="color:var(--warn);margin-bottom:10px">Кнопки заработают после одной установки из консоли сервера (команда go.sh).</div>'}
