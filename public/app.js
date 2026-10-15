@@ -1090,7 +1090,7 @@ route(/^\/salary$/, async (page, query) => {
   const from = query.from || monthStart(), to = query.to || today();
   const rows = await GET('/api/reports/salary' + qs({ from, to }));
   page.innerHTML = `<div class="topbar"><h1>${isAdmin() ? 'Зарплата' : 'Моя зарплата'}</h1><div class="sp"></div>${periodBar(page, from, to)}</div>
-    <div class="small muted" style="margin-bottom:12px">Начисление: % от стоимости работ по выданным заказам (с учётом скидки). Товары в зарплату мастеров не входят; % от товаров начисляется, только если он задан сотруднику. Проценты задаются в разделе «Сотрудники».</div>
+    <div class="small muted" style="margin-bottom:12px">Мастерам начисляется % от стоимости работ по выданным заказам (с учётом скидки), товары в зарплату не входят. Руководителям начисления ведутся вне CRM (поставьте им 0%). Проценты задаются в разделе «Сотрудники».</div>
     ${rows.length ? rows.map((u) => `<div class="card"><div class="inline" style="margin-bottom:8px"><h2 style="margin:0;flex:1">${esc(u.name)} <span class="muted small">${ROLES[u.role]} · работы ${u.salary_percent || 0}%${u.goods_percent ? ' · товары ' + u.goods_percent + '%' : ''}</span></h2>
       ${isAdmin() && u.due > 0 ? `<button class="sm primary" data-pay="${u.id}" data-due="${u.due}">Выплатить ${rub(u.due)}</button>` : ''}</div>
       <div class="grid g4"><div class="kpi"><div class="l">Работы</div><div class="v" style="font-size:18px">${rub(u.works_sum)}</div></div><div class="kpi"><div class="l">Начислено</div><div class="v acc" style="font-size:18px">${rub(u.accrued)}</div></div>
@@ -1123,7 +1123,9 @@ route(/^\/users$/, async (page) => {
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
     <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
     ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>` : ''}`,
-  { onSubmit: async (d) => { if (u.id) await PUT('/api/users/' + u.id, d); else await POST('/api/users', d); S.staff = await GET('/api/staff'); toast('Сохранено'); navigate(); } });
+  { onSubmit: async (d) => { if (u.id) await PUT('/api/users/' + u.id, d); else await POST('/api/users', d); S.staff = await GET('/api/staff'); toast('Сохранено'); navigate(); },
+    // руководителям начисления ведутся вне CRM, мастерам — 50% от работ
+    onOpen: (f) => { f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
 });
