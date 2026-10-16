@@ -31,7 +31,7 @@ const ROLES = { admin: 'Администратор', senior: 'Руководит
 const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
 const SOURCES = ['Рекомендация', 'Авито', 'Яндекс Карты', '2ГИС', 'ВКонтакте', 'Telegram', 'Instagram', 'Сайт', 'Проезжал мимо', 'Постоянный клиент'];
-const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Эквайринг', 'Прочее'];
+const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Кредит', 'Эквайринг', 'Зарплата руководителей', 'Прочее'];
 const INCOME_CATS = ['Оплата заказа', 'Продажа без заказа', 'Внесение в кассу', 'Прочее'];
 
 const S = { me: null, staff: [], services: null };
@@ -1542,16 +1542,8 @@ route(/^\/salary$/, async (page, query) => {
 });
 
 // ================= Сотрудники =================
-route(/^\/users$/, async (page) => {
-  const rows = await GET('/api/users');
-  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('list')}<div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
-    <div class="card tblwrap" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
-    ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
-    <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
-    <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
-  const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
+// карточка сотрудника (общая для «Списка» и «Руководителей»)
+const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
     <div class="row"><div class="field"><label>Имя *</label><input name="name" required value="${esc(u.name || '')}"></div>
     <div class="field"><label>Логин *</label><input name="login" required value="${esc(u.login || '')}" autocapitalize="off" pattern="[a-zA-Z0-9._\-]{3,32}" title="3–32 символа: латинские буквы, цифры, точка, дефис, подчёркивание"></div></div>
     <div class="row"><div class="field"><label>Роль</label><select name="role">${opts(Object.entries(ROLES), u.role)}</select></div><div class="field"><label>Телефон</label><input name="phone" value="${esc(u.phone || '')}"></div></div>
@@ -1589,11 +1581,21 @@ route(/^\/users$/, async (page) => {
       };
       const dh = () => $('#dhF', f).classList.toggle('hidden', f.role.value !== 'senior'); dh(); f.role.addEventListener('change', dh);
       f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
+
+route(/^\/users$/, async (page) => {
+  const rows = (await GET('/api/users')).filter((u) => u.role !== 'senior'); // руководители — на своей вкладке
+  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('list')}<div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
+    <div class="card tblwrap" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
+    ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
+    <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
+    <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
 });
 
-const staffTabs = (cur) => isAdmin() ? `<div class="chips"><a class="chip ${cur === 'list' ? 'on' : ''}" href="#/users">Список</a><a class="chip ${cur === 'sched' ? 'on' : ''}" href="#/users/schedule">График работы</a></div>` : '';
+const staffTabs = (cur) => isAdmin() ? `<div class="chips"><a class="chip ${cur === 'list' ? 'on' : ''}" href="#/users">Список</a><a class="chip ${cur === 'sched' ? 'on' : ''}" href="#/users/schedule">График работы</a><a class="chip ${cur === 'mgmt' ? 'on' : ''}" href="#/users/seniors">Руководители</a></div>` : '';
 const SCH_CODE = { off: 'В', vac: 'О', sick: 'Б', abs: 'Н/Р' };
 route(/^\/users\/schedule$/, async (page, query) => {
   const month = query.m || today().slice(0, 7);
@@ -1646,6 +1648,78 @@ route(/^\/users\/schedule$/, async (page, query) => {
         ABS = {}; toast('Сохранено'); navigate(); } });
   }));
 });
+
+// ================= Руководители: часы, нормочас, выплата =================
+route(/^\/users\/seniors$/, async (page, query) => {
+  const month = query.m || today().slice(0, 7);
+  const [d, users] = await Promise.all([GET('/api/mgmt' + qs({ month })), GET('/api/users')]);
+  const seniors = users.filter((u) => u.role === 'senior');
+  const shift = (n) => { const t = new Date(month + '-15T12:00'); t.setMonth(t.getMonth() + n); return ymd(t).slice(0, 7); };
+  const mName = `${MONTHS_NOM[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}`;
+  const paid = d.payouts.filter((x) => !x.cancelled);
+  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('mgmt')}<div class="sp"></div>
+    <div class="inline"><button id="pm">‹</button><b style="min-width:130px;text-align:center">${mName}</b><button id="nm">›</button><button id="cm">Текущий</button></div>
+    <button class="primary" id="addS">+ Руководитель</button></div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="kpi"><div class="l">Остаток всех денег сейчас</div><div class="v acc">${rub(d.balance)}</div><div class="small muted">нал. ${num(d.balances.cash)} · карта ${num(d.balances.card)} · счёт ${num(d.balances.transfer)}</div></div>
+    <div class="kpi"><div class="l">Часов руководителей за месяц</div><div class="v">${num(d.hours)} ч</div></div>
+    <div class="kpi"><div class="l">Стоимость нормочаса</div><div class="v ok">${d.hours ? rub(d.rate) : '—'}</div><div class="small muted">остаток ÷ все часы</div></div>
+    <div class="kpi"><div class="l">Обязательные расходы</div><div class="v bad">${rub(d.exp_total)}</div><div class="small muted">по ${rub(d.share)} на каждого (÷${d.rows.length || 0})</div></div></div>
+  <div class="grid g-main"><div>
+    <div class="card"><h2>Распределение по руководителям</h2>
+      ${d.rows.length ? `<div class="tblwrap"><table class="tbl resp"><thead><tr><th>Руководитель</th><th class="r">Дней</th><th class="r">Часов</th><th class="r">Доход по часам</th><th class="r">Обяз. расходы</th><th class="r">Чистый доход</th></tr></thead><tbody>
+      ${d.rows.map((x) => `<tr class="click" data-u="${x.id}"><td data-l="Руководитель"><b>${esc(x.name)}</b><div class="small muted">норма ${num(x.default_hours || 0)} ч/день</div></td><td data-l="Дней" class="r">${x.days}</td><td data-l="Часов" class="r mono">${num(x.hours)}</td>
+        <td data-l="Доход по часам" class="r mono">${rub(x.gross)}</td><td data-l="Обяз. расходы" class="r mono" style="color:var(--bad)">−${rub(x.share)}</td>
+        <td data-l="Чистый доход" class="r mono"><b style="color:${x.net < 0 ? 'var(--bad)' : 'var(--ok)'}">${rub(x.net)}</b></td></tr>`).join('')}
+      <tr><td data-l=""><b>Итого</b></td><td></td><td data-l="Часов" class="r mono"><b>${num(d.hours)}</b></td><td data-l="Доход" class="r mono"><b>${rub(d.rows.reduce((a, x) => a + x.gross, 0))}</b></td><td data-l="Расходы" class="r mono" style="color:var(--bad)"><b>−${rub(d.exp_total)}</b></td><td data-l="К выплате" class="r mono"><b>${rub(d.pay_total)}</b></td></tr>
+      </tbody></table></div>
+      <div class="inline" style="margin-top:12px;flex-wrap:wrap"><button class="primary" id="payAll" ${d.pay_total > 0 ? '' : 'disabled'}>💸 Выплатить зарплату всем руководителям · ${rub(d.pay_total)}</button>
+        <a class="btn sm" href="#/users/schedule${month !== today().slice(0, 7) ? '?m=' + month : ''}">Поправить часы в графике</a></div>
+      ${d.rows.some((x) => x.net < 0) ? '<div class="small" style="color:var(--bad);margin-top:6px">У кого чистый доход отрицательный, тому выплачивается 0.</div>' : ''}`
+      : '<div class="empty">Нет руководителей-мастеров. Добавьте сотрудника с ролью «Руководитель-мастер».</div>'}
+      <div class="small muted" style="margin-top:10px">Нормочас = остаток всех денег (наличные + карта + счёт) ÷ часы всех руководителей за месяц. Доход по часам = часы × нормочас. Обязательные расходы делятся поровну на всех руководителей и вычитаются. Часы берутся из графика работы.
+      Справочно, ещё не выплачено: мастерам за месяц ${rub(d.info.masters_due)}, долг контрагентам ${rub(d.info.contractors_debt)}.</div></div>
+    ${d.payouts.length ? `<div class="card"><h2>Выплаты за ${mName.toLowerCase()}</h2>${d.payouts.map((x) => `<div class="li"><div class="grow"><div class="t"><b>${rub(x.total)}</b> · ${dt(x.created_at)}${x.user ? ' · ' + esc(x.user) : ''}${x.cancelled ? ' <span class="badge">операция удалена в кассе</span>' : ''}</div>
+      <div class="s">${x.details.map((r) => `${esc(r.name)}: ${rub(r.pay)} (${num(r.hours)} ч)`).join(' · ')}</div></div></div>`).join('')}</div>` : ''}
+  </div><div>
+    <form class="card" id="expF"><h2>Обязательные расходы за месяц</h2>
+      <div id="expL">${d.expenses.filter((e) => e.name !== '—' || e.amount).map((e) => expRow(e)).join('')}</div>
+      <div class="inline" style="margin:6px 0 12px;flex-wrap:wrap">${['Аренда', 'Кредит', 'Налог'].map((n) => `<button type="button" class="sm" data-addexp="${n}">+ ${n}</button>`).join('')}<button type="button" class="sm" data-addexp="">+ Своя строка</button></div>
+      <div class="totals" style="width:100%"><div class="big"><span>Итого</span><span class="mono" id="expT">${rub(d.exp_total)}</span></div></div>
+      <button class="primary" style="margin-top:10px">Сохранить и пересчитать</button>
+      <div class="small muted" style="margin-top:8px">Для нового месяца строки переносятся из прошлого — поправьте суммы. Сами платежи (аренда, кредит, налог) проводите в «Финансах» как расход.</div></form>
+    <div class="card"><h2>Руководители</h2>${seniors.map((u) => `<div class="li click" data-u="${u.id}"><div class="grow"><div class="t"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</div><div class="s">${esc(u.login)} · ${num(u.default_hours || 0)} ч/день${u.phone ? ' · ' + esc(u.phone) : ''}</div></div>${u.max_linked ? '<span class="badge ok">MAX</span>' : ''}</div>`).join('') || '<div class="muted">Пока нет</div>'}</div>
+  </div></div>`;
+  $('#pm', page).onclick = () => go('/users/seniors' + qs({ m: shift(-1) }));
+  $('#nm', page).onclick = () => go('/users/seniors' + qs({ m: shift(1) }));
+  $('#cm', page).onclick = () => go('/users/seniors');
+  $('#addS', page).onclick = () => userModal({ role: 'senior', active: 1, salary_percent: 0, default_hours: 8 });
+  $$('[data-u]', page).forEach((el) => (el.onclick = () => { const u = users.find((x) => x.id === +el.dataset.u); if (u) userModal(u); }));
+  // расходы
+  const f = $('#expF', page), L = $('#expL', f);
+  const recalc = () => { $('#expT', f).textContent = rub($$('input[name=amount]', L).reduce((a, i) => a + (+i.value || 0), 0)); };
+  const bindRows = () => { $$('[data-delexp]', L).forEach((b) => (b.onclick = () => { b.closest('.exprow').remove(); recalc(); })); L.oninput = recalc; };
+  $$('[data-addexp]', f).forEach((b) => (b.onclick = () => { L.insertAdjacentHTML('beforeend', expRow({ name: b.dataset.addexp, amount: '' })); bindRows(); const r = L.lastElementChild; $(b.dataset.addexp ? 'input[name=amount]' : 'input[name=name]', r).focus(); }));
+  bindRows();
+  f.onsubmit = async (e) => { e.preventDefault();
+    const items = $$('.exprow', L).map((r) => ({ name: $('input[name=name]', r).value, amount: $('input[name=amount]', r).value }));
+    await PUT('/api/mgmt/expenses', { month, items }); toast('Расходы сохранены'); navigate(); };
+  // выплата
+  const pb = $('#payAll', page);
+  if (pb) pb.onclick = () => modal('Выплата зарплаты руководителям', `
+    <div class="small muted" style="margin-bottom:8px">${mName}. Будет проведена <b>одна операция</b> расхода в «Финансах» — статья «Зарплата руководителей».</div>
+    ${d.rows.map((x) => `<div class="li"><div class="grow"><b>${esc(x.name)}</b> <span class="muted small">${num(x.hours)} ч × ${rub(d.rate)} − ${rub(x.share)}</span></div><span class="mono">${rub(x.pay)}</span></div>`).join('')}
+    <div class="totals" style="width:100%;margin:8px 0"><div class="big"><span>Всего</span><span class="mono">${rub(d.pay_total)}</span></div></div>
+    ${paid.length ? `<div class="offwarn">⚠️ За этот месяц уже была выплата ${rub(paid[0].total)} (${dt(paid[0].created_at)}). Будет ещё одна.</div>` : ''}
+    <div class="field"><label>Из какой кассы</label><select name="method">${Object.entries(METHODS).map(([k, t]) => `<option value="${k}" ${k === 'cash' ? 'selected' : ''}>${t} — сейчас ${rub(d.balances[k])}</option>`).join('')}</select></div>`,
+  { submit: 'Выплатить', onSubmit: async (v) => {
+      if (d.balances[v.method] < d.pay_total && !(await confirmBox(`В кассе «${METHODS[v.method]}» сейчас ${rub(d.balances[v.method])} — меньше суммы выплаты. Всё равно провести?`, 'Провести'))) return false;
+      await POST('/api/mgmt/payout', { month, method: v.method, expect_total: d.pay_total }); toast('Выплата проведена — операция в «Финансах»'); navigate(); } });
+});
+function expRow(e) {
+  return `<div class="exprow row" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;align-items:end;margin-bottom:6px"><div class="field" style="margin:0"><input name="name" value="${esc(e.name || '')}" placeholder="Название расхода"></div>
+    <div class="field" style="margin:0"><input name="amount" type="number" step="any" min="0" value="${e.amount === '' ? '' : esc(e.amount)}" placeholder="Сумма, ₽"></div><button type="button" class="ghost sm danger" data-delexp title="Убрать">✕</button></div>`;
+}
 
 // ================= Настройки =================
 async function loadUpdateCard(page) {

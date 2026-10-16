@@ -315,7 +315,10 @@ option.nr { color: #e5484d; }
   .modal .mf button { flex: 1 1 auto; justify-content: center; }
   .modal .mf button[style*="margin-right:auto"] { flex-basis: 100%; }
   .toasts { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
-  .toasts > * { max-width: none; min-width: 0; white-space: normal; }
+  .toasts > * { max-width: none; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .toasts { width: auto; max-width: calc(100vw - 24px); }
+  button { white-space: normal; text-align: center; }
+  #payAll { width: 100%; justify-content: center; }
   .grid > *, .row > * { min-width: 0; }
   .g-main, .g2, .g3 { grid-template-columns: minmax(0, 1fr) !important; }
   .topbar > .inline, .topbar > div { max-width: 100%; min-width: 0; }
