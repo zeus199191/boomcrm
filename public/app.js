@@ -25,7 +25,7 @@ const orderNo = (id) => 'БС-' + String(id).padStart(5, '0');
 const carStr = (o) => [o.brand, o.model].filter(Boolean).join(' ') + (o.plate ? ` · ${o.plate}` : '');
 const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-const METHODS = { cash: 'Наличные', card: 'Карта', transfer: 'Перевод' };
+const METHODS = { cash: 'Наличные', card: 'Карта', transfer: 'Счёт' };
 const ROLES = { admin: 'Администратор', senior: 'Руководитель-мастер', manager: 'Менеджер', master: 'Мастер' };
 const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
@@ -1133,7 +1133,7 @@ const monthStart = () => today().slice(0, 8) + '01';
 
 route(/^\/finance$/, async (page, query) => {
   const from = query.from || monthStart(), to = query.to || today();
-  const [r, pays] = await Promise.all([GET('/api/reports/finance' + qs({ from, to })), GET('/api/payments' + qs({ from, to }))]);
+  const [r, pays, mb] = await Promise.all([GET('/api/reports/finance' + qs({ from, to })), GET('/api/payments' + qs({ from, to })), GET('/api/money/balances' + qs({ from, to }))]);
   const inc = r.byMethod.filter((x) => x.direction === 'in').reduce((s, x) => s + x.s, 0);
   const exp = r.byMethod.filter((x) => x.direction === 'out').reduce((s, x) => s + x.s, 0);
   const s = r.sales; const revenue = s.services + s.goods; const goodsMargin = s.goods - s.goods_cost;
@@ -1142,6 +1142,20 @@ route(/^\/finance$/, async (page, query) => {
   const catList = (dir) => r.byCategory.filter((x) => x.direction === dir);
   const maxCat = Math.max(1, ...r.byCategory.map((x) => x.s));
   page.innerHTML = `<div class="topbar"><h1>Финансы</h1><div class="sp"></div>${periodBar(page, from, to)}</div>
+  <div class="card"><div class="inline" style="margin-bottom:10px;flex-wrap:wrap"><h2 style="margin:0;flex:1">Деньги в кассах</h2>
+      <button class="sm" id="cashOut">💵 Обналичить</button><button class="sm" id="moveMoney">⇄ Перемещение</button>${isAdmin() ? '<button class="sm" id="reconcile">✓ Сверка остатков</button>' : ''}</div>
+    <div class="grid g4" style="margin-bottom:12px">${Object.entries(METHODS).map(([k, t]) => `<div class="kpi"><div class="l">${t} — сейчас</div><div class="v ${mb.now[k] < 0 ? 'bad' : ''}">${rub(mb.now[k])}</div></div>`).join('')}
+      <div class="kpi"><div class="l">Всего денег</div><div class="v acc">${rub(Object.values(mb.now).reduce((a, b) => a + b, 0))}</div></div></div>
+    <div class="tblwrap"><table class="tbl resp"><thead><tr><th>За период</th><th class="r">На начало</th><th class="r">Приход</th><th class="r">Расход</th><th class="r">Перемещения</th><th class="r">Корректировки</th><th class="r">На конец</th></tr></thead><tbody>
+    ${mb.period.map((w) => `<tr><td data-l="Касса"><b>${w.name}</b></td><td data-l="На начало" class="r mono">${num(w.open)}</td><td data-l="Приход" class="r mono" style="color:var(--ok)">${w.inc ? '+' + num(w.inc) : '—'}</td><td data-l="Расход" class="r mono" style="color:var(--bad)">${w.exp ? '−' + num(w.exp) : '—'}</td>
+      <td data-l="Перемещения" class="r mono">${w.t_in || w.t_out ? `${w.t_in ? '+' + num(w.t_in) : ''}${w.t_in && w.t_out ? ' / ' : ''}${w.t_out ? '−' + num(w.t_out) : ''}` : '—'}${w.fee ? `<div class="small muted">в т.ч. комиссия ${num(w.fee)}</div>` : ''}</td>
+      <td data-l="Корректировки" class="r mono">${w.adj ? (w.adj > 0 ? '+' : '−') + num(Math.abs(w.adj)) : '—'}</td><td data-l="На конец" class="r mono"><b>${num(w.close)}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    ${mb.moves.length ? `<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Обналичивания, перемещения и сверки за период (${mb.moves.length})</summary><table class="tbl resp" style="margin-top:6px"><tbody>
+      ${mb.moves.map((m) => `<tr><td data-l="Дата" class="nowrap">${dt(m.created_at)}</td><td data-l="Операция">${m.kind === 'adjust' ? `Корректировка · ${METHODS[m.to_method]}` : `${METHODS[m.from_method]} → ${METHODS[m.to_method]}${m.to_method === 'cash' ? ' (обналичивание)' : ''}`} <span class="muted">${esc(m.note || '')}${m.user ? ' · ' + esc(m.user) : ''}</span></td>
+      <td data-l="Сумма" class="r mono">${m.kind === 'adjust' ? (m.amount > 0 ? '+' : '−') + num(Math.abs(m.amount)) : num(m.amount)}${m.fee ? `<div class="small muted">комиссия ${num(m.fee)}</div>` : ''}</td>${isAdmin() ? `<td><button class="ghost sm danger" data-delm="${m.id}">✕</button></td>` : ''}</tr>`).join('')}
+    </tbody></table></details>` : ''}
+    <div class="small muted" style="margin-top:8px">Остаток = все приходы − расходы по этому способу оплаты ± перемещения ± корректировки. «Карта» и «Счёт» — оплаты, проведённые этим способом. Для старта сделайте «Сверку остатков» и внесите фактические суммы.</div></div>
   <div class="grid g4" style="margin-bottom:14px">
     <div class="kpi"><div class="l">Поступления</div><div class="v ok">${rub(inc)}</div></div>
     <div class="kpi"><div class="l">Расходы</div><div class="v bad">${rub(exp)}</div></div>
@@ -1185,6 +1199,32 @@ route(/^\/finance$/, async (page, query) => {
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
   { onSubmit: async (d) => { await POST('/api/payments', { ...d, direction: dir }); toast('Проведено'); navigate(); },
     onOpen: (f) => { const c = $('#cat', f); const t = () => $('#empF', f).classList.toggle('hidden', c.value !== 'Зарплата'); c.onchange = t; t(); } });
+  const mopts = (sel, skip) => opts(Object.entries(METHODS).filter(([k]) => k !== skip), sel);
+  $('#cashOut', page).onclick = () => modal('Обналичивание', `
+    <div class="small muted" style="margin-bottom:8px">Укажите, сколько сняли с каждого источника. «Получено» — сумма, пришедшая в наличные; комиссия банка списывается с источника дополнительно.</div>
+    ${[['transfer', 'Со счёта'], ['card', 'С карты']].map(([k, t]) => `<div class="row"><div class="field"><label>${t}: получено, ₽ <span class="muted">(сейчас ${rub(mb.now[k])})</span></label><input name="a_${k}" type="number" step="any" min="0"></div>
+      <div class="field"><label>Комиссия, ₽</label><input name="f_${k}" type="number" step="any" min="0"></div></div>`).join('')}
+    <div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div><div class="field"><label>Комментарий</label><input name="note" placeholder="например: снял в банкомате"></div></div>
+    <div class="small" id="coSum"></div>`,
+  { onOpen: (f) => { const upd = () => { const v = (n) => +(f.elements[n].value || 0); const got = v('a_transfer') + v('a_card'), fee = v('f_transfer') + v('f_card');
+      $('#coSum', f).innerHTML = got || fee ? `В наличные: <b>${rub(got)}</b>${fee ? ` · комиссия: <b>${rub(fee)}</b> · списано всего: <b>${rub(got + fee)}</b>` : ''}` : ''; };
+      f.oninput = upd; },
+    onSubmit: async (d) => { await POST('/api/money/transfer', { to_method: 'cash', date: d.date, note: d.note || 'Обналичивание',
+      parts: ['transfer', 'card'].map((k) => ({ from_method: k, amount: d['a_' + k], fee: d['f_' + k] })) }); toast('Обналичивание проведено'); navigate(); } });
+  $('#moveMoney', page).onclick = () => modal('Перемещение денег', `
+    <div class="row"><div class="field"><label>Откуда</label><select name="from">${mopts('cash')}</select></div><div class="field"><label>Куда</label><select name="to">${mopts('transfer')}</select></div></div>
+    <div class="row"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" step="any" min="0.01" required></div><div class="field"><label>Комиссия, ₽</label><input name="fee" type="number" step="any" min="0"></div></div>
+    <div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div><div class="field"><label>Комментарий</label><input name="note" placeholder="например: сдал наличные на счёт"></div></div>`,
+  { onSubmit: async (d) => { if (d.from === d.to) throw new Error('Выберите разные кассы');
+      await POST('/api/money/transfer', { to_method: d.to, date: d.date, note: d.note, parts: [{ from_method: d.from, amount: d.amount, fee: d.fee }] }); toast('Перемещение проведено'); navigate(); } });
+  if ($('#reconcile', page)) $('#reconcile', page).onclick = () => modal('Сверка остатков', `
+    <div class="small muted" style="margin-bottom:8px">Пересчитайте деньги и впишите фактические остатки. Если факт отличается от CRM, будет проведена корректировка на разницу. Пустое поле — не менять.</div>
+    ${Object.entries(METHODS).map(([k, t]) => `<div class="row"><div class="field"><label>${t}: по CRM</label><input value="${num(mb.now[k])}" disabled></div>
+      <div class="field"><label>Фактически, ₽</label><input name="${k}" type="number" step="any" data-crm="${mb.now[k]}"></div><div class="field"><label>Разница</label><input disabled id="df_${k}"></div></div>`).join('')}
+    <div class="field"><label>Комментарий</label><input name="note" placeholder="например: ввод начальных остатков"></div>`,
+  { onOpen: (f) => { f.oninput = () => Object.keys(METHODS).forEach((k) => { const i = f.elements[k]; $('#df_' + k, f).value = i.value === '' ? '' : ((+i.value - +i.dataset.crm) > 0 ? '+' : '') + num(+i.value - +i.dataset.crm); }); },
+    onSubmit: async (d) => { const r = await POST('/api/money/reconcile', d); toast(r.made.length ? 'Корректировки проведены: ' + r.made.length : 'Расхождений нет'); navigate(); } });
+  $$('[data-delm]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию? Обналичивание удаляется целиком (все источники).', 'Удалить')) { await DEL('/api/money/moves/' + b.dataset.delm); navigate(); } }));
   $('#addIn', page).onclick = () => payModal('in');
   $('#addOut', page).onclick = () => payModal('out');
   $$('[data-delp]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delp); navigate(); } }));
