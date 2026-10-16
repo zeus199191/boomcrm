@@ -469,10 +469,64 @@ function acceptCard(o, office) {
     <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${dis}></div></div>
     <div class="field" style="margin-top:8px"><label>Повреждения, сколы, царапины</label><textarea name="accept_damage" rows="2" ${dis} placeholder="Напр.: скол на капоте, царапина на заднем бампере справа">${esc(o.accept_damage || '')}</textarea></div>
     <div class="field"><label>Личные вещи в салоне</label><input name="accept_items" value="${esc(o.accept_items || '')}" ${dis} placeholder="Детское кресло, зарядка…"></div>
+    <div class="field"><label>Фото автомобиля${o.photos.length ? ` (${o.photos.length})` : ''}</label>
+      <div class="photos">${o.photos.map((p) => `<button type="button" class="ph" data-ph="${p.id}" title="${esc(dt(p.created_at) + (p.user ? ' · ' + p.user : ''))}"><img loading="lazy" src="/api/photos/${p.id}" alt=""></button>`).join('')}
+      <label class="ph add"><span>📷</span><small>Добавить фото</small><input type="file" accept="image/*" multiple hidden id="phIn"></label></div>
+      ${office && o.photos.length && S.me.max_on ? '<button type="button" class="sm" id="phMax" style="margin-top:8px">✉ Отправить фото в MAX</button>' : ''}</div>
     ${office ? `<div class="inline"><button class="primary sm">${o.accept_at ? 'Сохранить' : 'Принять в работу'}</button><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Печать акта</a></div>` : ''}
   </form>`;
 }
-function bindAccept(page, o, reload) {
+// Сжатие фото на телефоне перед загрузкой: длинная сторона до 1600 px, JPEG
+async function shrinkImage(file, maxSide = 1600, q = 0.82) {
+  let img = null;
+  try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {}
+  if (!img) img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('Этот формат фото не поддерживается браузером')); i.src = URL.createObjectURL(file); });
+  const w = img.width, h = img.height, k = Math.min(1, maxSide / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', q);
+}
+function bindPhotos(page, o, reload, office) {
+  const inp = $('#phIn', page);
+  if (inp) inp.onchange = async () => {
+    const files = [...inp.files]; if (!files.length) return;
+    let ok = 0;
+    for (const [n, f] of files.entries()) {
+      toast(`Загрузка фото ${n + 1} из ${files.length}…`);
+      try { await POST(`/api/orders/${o.id}/photos`, { data: await shrinkImage(f), kind: 'accept' }); ok++; } catch (e) { toast(`${f.name}: ${e.message}`, true); }
+    }
+    if (ok) { toast(`Загружено фото: ${ok}`); reload(); }
+  };
+  $$('[data-ph]', page).forEach((b) => (b.onclick = () => {
+    const ids = o.photos.map((p) => p.id); let cur = ids.indexOf(+b.dataset.ph);
+    const m = modal(`Фото ${cur + 1} из ${ids.length}`, `<div class="phview"><img id="phBig" src="/api/photos/${ids[cur]}" alt="">${ids.length > 1 ? '<button type="button" class="phnav l" data-nav="-1">‹</button><button type="button" class="phnav r" data-nav="1">›</button>' : ''}</div>`,
+      { wide: true, footer: `${office ? '<button type="button" class="ghost danger" data-del style="margin-right:auto">Удалить</button>' : ''}<a class="btn" id="phDl" href="/api/photos/${ids[cur]}?dl=1">⬇ Скачать</a><button type="button" data-x>Закрыть</button>` });
+    const show = () => { $('#phBig', m.el).src = '/api/photos/' + ids[cur]; $('#phDl', m.el).href = `/api/photos/${ids[cur]}?dl=1`; $('.mh h2', m.el).textContent = `Фото ${cur + 1} из ${ids.length}`; };
+    $$('[data-nav]', m.el).forEach((x) => (x.onclick = () => { cur = (cur + +x.dataset.nav + ids.length) % ids.length; show(); }));
+    const d = $('[data-del]', m.el); if (d) d.onclick = async () => { if (!(await confirmBox('Удалить это фото?', 'Удалить'))) return; await DEL('/api/photos/' + ids[cur]); m.close(); toast('Фото удалено'); reload(); };
+  }));
+  const mx = $('#phMax', page);
+  if (mx) mx.onclick = () => {
+    const ppl = S.staff.filter((u) => u.max);
+    modal(`Фото в MAX · ${o.number}`, `
+      <div class="small muted" style="margin-bottom:8px">Сообщение уйдёт с пометкой: заказ ${esc(o.number)}, ${esc([o.brand, o.model, o.plate].filter(Boolean).join(' '))}${o.accept_damage ? ', повреждения из приёмки' : ''}.</div>
+      <label>Фото</label><div class="photos pick">${o.photos.map((p) => `<label class="ph"><input type="checkbox" name="ph" value="${p.id}" checked><img src="/api/photos/${p.id}" alt=""></label>`).join('')}</div>
+      <label style="margin-top:10px;display:block">Кому</label><div class="checkgrid">
+        ${S.me.max_group ? '<label class="ck"><input type="checkbox" name="group" checked> 👥 Общий чат студии</label>' : ''}
+        ${ppl.map((u) => `<label class="ck"><input type="checkbox" name="u" value="${u.id}" ${!S.me.max_group && u.id === o.master_id ? 'checked' : ''}> ${esc(u.name)}${u.id === o.master_id ? ' <span class="muted small">(мастер заказа)</span>' : ''}</label>`).join('')}
+        ${!ppl.length && !S.me.max_group ? '<div class="muted small">Никто из сотрудников ещё не подключил MAX (Сотрудники → карточка → «Подключить MAX»).</div>' : ''}</div>
+      <div class="field" style="margin-top:10px"><label>Комментарий</label><input name="note" placeholder="например: обратите внимание на скол на капоте"></div>`,
+    { submit: 'Отправить', onSubmit: async (d, f) => {
+      const ids = $$('input[name=ph]:checked', f).map((x) => +x.value), users = $$('input[name=u]:checked', f).map((x) => +x.value), group = !!$('input[name=group]:checked', f);
+      if (!ids.length) { toast('Отметьте фото', true); return false; }
+      if (!users.length && !group) { toast('Выберите, кому отправить', true); return false; }
+      toast('Отправляю в MAX…');
+      const r = await POST(`/api/orders/${o.id}/photos/send`, { ids, users, group, note: d.note });
+      toast(r.errors.length ? `Отправлено: ${r.sent}. Ошибки: ${r.errors.join('; ')}` : `Фото отправлены (${r.sent})`, !!r.errors.length); reload();
+    } });
+  };
+}
+function bindAccept(page, o, reload, office = isOffice()) {
   const f = $('#acc', page); if (!f) return;
   f.onsubmit = async (e) => {
     e.preventDefault();
@@ -570,6 +624,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     await POST(`/api/orders/${o.id}/comment`, { text: v }); reload();
   };
   $('#cmt', page).onkeydown = (e) => { if (e.key === 'Enter') $('#addCmt', page).click(); };
+  bindPhotos(page, o, reload, office);
   if (!office) return;
   if (o.scheduled_at) markMasters(page, o.scheduled_at, o.end_date);
   { const of = $('#of', page); const rm = () => markMasters(page, of.scheduled_at.value, of.end_date.value);
