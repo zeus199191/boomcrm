@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+<style>@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;900&amp;display=swap');
+.w{font-family:'Unbounded','Arial Black',sans-serif;font-weight:900;font-size:80px;letter-spacing:-2px}
+.t{font-family:'Unbounded',Arial,sans-serif;font-weight:400;font-size:16px;letter-spacing:3px}</style>
+<rect width="1200" height="560" fill="#fff"/>
+<g transform="translate(110,170)">
+<circle cx="110" cy="110" r="104" fill="none" stroke="#000" stroke-width="8"/>
+<g fill="#000"><circle cx="110" cy="22" r="5"/><circle cx="198" cy="110" r="5"/><circle cx="110" cy="198" r="5"/><circle cx="22" cy="110" r="5"/><circle cx="172.2" cy="47.8" r="5"/><circle cx="172.2" cy="172.2" r="5"/><circle cx="47.8" cy="172.2" r="5"/><circle cx="47.8" cy="47.8" r="5"/></g>
+<circle cx="110" cy="110" r="78" fill="#000"/>
+<circle cx="110" cy="110" r="62" fill="#fff"/>
+<circle cx="110" cy="110" r="50" fill="none" stroke="#000" stroke-width="4"/>
+<circle cx="110" cy="110" r="38" fill="none" stroke="#000" stroke-width="3"/>
+<circle cx="110" cy="110" r="24" fill="#000"/>
+<circle cx="102" cy="102" r="6" fill="#fff"/>
+</g>
+<text class="w" x="370" y="300">БУМСИСТЕМ</text>
+<rect x="372" y="336" width="48" height="6" fill="#000"/>
+<text class="t" x="436" y="345" textLength="560" lengthAdjust="spacing">ТЮНИНГ-АТЕЛЬЕ С СИБИРСКИМ ХАРАКТЕРОМ</text>
+<rect x="1012" y="336" width="48" height="6" fill="#000"/>
+</svg>
