@@ -181,7 +181,8 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 .log .muted { font-size: 12px; }
 pre.code { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 
-@media (max-width: 1100px) { .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); } .g-main { grid-template-columns: 1fr; } .g3 { grid-template-columns: 1fr 1fr; } }
+.grid > *, .row > * { min-width: 0; }
+@media (max-width: 1100px) { .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); } .g-main { grid-template-columns: minmax(0,1fr); } .g3 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .side { position: fixed; left: 0; top: 0; bottom: 0; width: 250px; z-index: 40; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--sh); }
@@ -331,3 +332,23 @@ option.nr { color: #e5484d; }
   .bars { overflow-x: auto; }
 }
 @media (max-width: 380px) { .g4 { grid-template-columns: minmax(0, 1fr); } }
+
+/* ===== Узкое окно на ПК (половина экрана, масштаб 125–150%): меню — полоса значков ===== */
+@media (min-width: 861px) and (max-width: 1180px) {
+  .app { grid-template-columns: 64px minmax(0, 1fr); }
+  .side { padding: 14px 8px; align-items: stretch; }
+  .logo { padding: 2px 0 14px; justify-content: center; }
+  .logo > div:not(.mark) { display: none; }
+  .nav a { justify-content: center; padding: 10px 0; position: relative; }
+  .nav a > span:not(.badge) { display: none; }
+  .nav svg { width: 20px; height: 20px; }
+  .nav .badge { position: absolute; top: 2px; right: 2px; margin: 0; font-size: 10px; padding: 0 5px; min-width: 0; line-height: 16px; }
+  .side .foot { padding: 10px 0 0; text-align: center; }
+  .side .foot .who, .side .foot .role { display: none; }
+  .side .foot .inline { flex-direction: column; gap: 4px; }
+  .side .foot button { width: 100%; justify-content: center; padding: 4px 0; font-size: 11px; margin-top: 0; }
+  .side .foot #myMax { font-size: 0; } .side .foot #myMax::before { content: 'MAX'; font-size: 11px; }
+  .main { padding: 18px 18px 50px; }
+}
+select[data-f=master_id] { min-width: 170px; }
+@media (max-width: 860px) { select[data-f=master_id] { min-width: 0; } }

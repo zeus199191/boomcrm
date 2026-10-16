@@ -37,7 +37,7 @@ const INCOME_CATS = ['Оплата заказа', 'Продажа без зак�
 const S = { me: null, staff: [], services: null };
 const role = () => S.me.user.role;
 const isOffice = () => role() !== 'master';
-const isAdmin = () => role() === 'admin';
+const isAdmin = () => role() === 'admin' || myRole() === 'senior'; // руководитель-мастер = права администратора
 const isDayOff = (ds) => (S.me.days_off || []).includes(new Date(String(ds).slice(0, 10) + 'T12:00').getDay());
 const stBadge = (st) => `<span class="badge st-${st}">${esc(S.me.statuses[st] || st)}</span>`;
 
@@ -213,7 +213,7 @@ function renderShell() {
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><div class="mark">Б</div><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
-    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : ''}</a>`).join('')}</nav>
+    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
       ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
@@ -1300,11 +1300,11 @@ route(/^\/salary$/, async (page, query) => {
 route(/^\/users$/, async (page) => {
   const rows = await GET('/api/users');
   page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('list')}<div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
-    <div class="card" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
+    <div class="card tblwrap" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="card small muted"><b>Роли.</b> Администратор — всё, включая сотрудников и настройки. Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
+    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => modal(u.id ? 'Сотрудник' : 'Новый сотрудник', `
     <div class="row"><div class="field"><label>Имя *</label><input name="name" required value="${esc(u.name || '')}"></div>
