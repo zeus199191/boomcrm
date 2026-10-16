@@ -217,12 +217,14 @@ function renderShell() {
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
       ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
-  </aside><main class="main" id="page"></main></div>`;
+  </aside><div class="scrim" id="scrim"></div><main class="main" id="page"></main></div>`;
   $('#logout').onclick = async () => { await POST('/api/logout'); S.me = null; renderLogin(); };
   $('#myPass').onclick = changeMyPassword;
   const mm = $('#myMax'); if (mm) mm.onclick = async () => { try { maxLinkModal(await POST('/api/me/max-link'), S.me.user.name); } catch (e) { toast(e.message, true); } };
-  $('#burger').onclick = () => $('#side').classList.toggle('open');
-  $('#side').addEventListener('click', (e) => { if (e.target.closest('a')) $('#side').classList.remove('open'); });
+  const sideOpen = (on) => { $('#side').classList.toggle('open', on); $('#scrim').classList.toggle('on', on); document.body.style.overflow = on ? 'hidden' : ''; };
+  $('#burger').onclick = () => sideOpen(!$('#side').classList.contains('open'));
+  $('#scrim').onclick = () => sideOpen(false);
+  $('#side').addEventListener('click', (e) => { if (e.target.closest('a')) sideOpen(false); });
 }
 
 function setActiveNav(path) {

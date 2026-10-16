@@ -7,6 +7,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+* { -webkit-tap-highlight-color: transparent; }
 body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
 a { color: var(--accent2); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -18,7 +20,7 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; te
 .hidden { display: none !important; }
 
 /* Layout */
-.app { display: grid; grid-template-columns: 228px 1fr; min-height: 100vh; }
+.app { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
 .side { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 10px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; }
 .logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
 .logo .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; font-weight: 900; color: #fff; font-size: 17px; box-shadow: 0 0 0 3px var(--accentbg); }
@@ -166,7 +168,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 .bars .b i { display: block; border-radius: 3px 3px 0 0; }
 .bars .b i.in { background: var(--accent); } .bars .b i.out { background: #4a5160; }
 .bars .b:hover::after { content: attr(data-t); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line2); padding: 4px 8px; border-radius: 6px; font-size: 12px; white-space: pre; z-index: 5; }
-.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .meter { height: 6px; background: var(--panel2); border-radius: 99px; overflow: hidden; margin-top: 4px; }
 .meter i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
@@ -269,3 +271,63 @@ option.nr { color: #e5484d; }
 .sched .tot { min-width: 54px; font-weight: 600; padding: 0 6px; }
 .sched td[title] { position: relative; }
 .sched td.hasnote::after { content: ''; position: absolute; right: 2px; top: 2px; border: 4px solid transparent; border-top-color: var(--accent); border-right-color: var(--accent); }
+
+.scrim { display: none; }
+/* ===== Смартфоны (Android / iOS) ===== */
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  body { overflow-x: hidden; }
+  .side { height: 100dvh; padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .scrim.on { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 39; }
+  .mobilebar { padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); min-height: 52px; box-sizing: border-box; }
+  .mobilebar button { padding: 8px; color: var(--text); }
+  .mobilebar svg { width: 24px; height: 24px; display: block; }
+  .mobilebar b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .main { padding: 12px max(12px, env(safe-area-inset-right)) calc(70px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  /* iOS увеличивает страницу при фокусе на поле со шрифтом < 16px */
+  input, select, textarea { font-size: 16px; }
+  .tbl.resp td input, .tbl.resp td select { font-size: 16px; }
+  button, .btn { min-height: 38px; }
+  button.sm, .btn.sm { min-height: 34px; }
+  .topbar { gap: 8px; margin-bottom: 12px; }
+  .topbar h1 { font-size: 20px; width: 100%; margin: 0; }
+  .topbar .sp { display: none; }
+  .topbar .chips { overflow-x: auto; flex-wrap: nowrap; max-width: 100%; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .topbar .chips::-webkit-scrollbar { display: none; }
+  .topbar .inline { flex-wrap: wrap; }
+  .topbar input[type=date] { flex: 1 1 130px; min-width: 0; }
+  .topbar input[type=search], .topbar > input { flex: 1 1 100%; }
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .kpi { padding: 12px; min-width: 0; } .kpi .v { font-size: 20px; overflow-wrap: anywhere; } .kpi .l { font-size: 11px; }
+  .card { padding: 14px 12px; }
+  /* таблицы без мобильной разметки — прокручиваются по горизонтали */
+  .tbl:not(.resp) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .tblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tbl.resp td { flex-wrap: wrap; }
+  .tbl.resp td .nrw { flex-basis: 100%; text-align: right; }
+  /* окна — снизу на весь экран, прокрутка внутри */
+  .overlay { padding: 0; align-items: flex-end; }
+  .modal, .modal.wide { max-width: none; border-radius: 16px 16px 0 0; max-height: 92dvh; display: flex; flex-direction: column; border-bottom: 0; }
+  .modal .mb { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; padding: 14px; }
+  .modal .mh { padding: 12px 14px; }
+  .modal .mf { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  .modal .mf button { flex: 1 1 auto; justify-content: center; }
+  .modal .mf button[style*="margin-right:auto"] { flex-basis: 100%; }
+  .toasts { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .toasts > * { max-width: none; min-width: 0; white-space: normal; }
+  .grid > *, .row > * { min-width: 0; }
+  .g-main, .g2, .g3 { grid-template-columns: minmax(0, 1fr) !important; }
+  .topbar > .inline, .topbar > div { max-width: 100%; min-width: 0; }
+  .topbar > .inline:has(.chips) { width: 100%; }
+  .topbar .inline .chips { flex: 1 1 100%; }
+  /* журнал: узкие колонки, дата закреплена слева */
+  .jwrap { max-height: calc(100dvh - 200px); }
+  .jr { min-width: 0; width: max-content; }
+  .jr th:not(.jd), .jr td:not(.jd) { width: 150px; min-width: 150px; max-width: 150px; }
+  .jr .jd { width: 54px; min-width: 54px; }
+  .legend { font-size: 11px; gap: 4px 10px; }
+  .sched .nm { min-width: 110px; padding: 4px 6px; }
+  .sched th, .sched td { min-width: 28px; }
+  .bars { overflow-x: auto; }
+}
+@media (max-width: 380px) { .g4 { grid-template-columns: minmax(0, 1fr); } }
