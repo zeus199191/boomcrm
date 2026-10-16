@@ -73,6 +73,7 @@ function formData(form) {
   for (const el of form.elements) {
     if (!el.name) continue;
     if (el.type === 'checkbox') o[el.name] = el.checked;
+    else if (el.type === 'radio') { if (el.checked) o[el.name] = el.value; else if (!(el.name in o)) o[el.name] = ''; }
     else o[el.name] = el.value;
   }
   return o;
