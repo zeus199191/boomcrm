@@ -369,3 +369,29 @@ select[data-f=master_id] { min-width: 170px; }
 .phview img { max-width: 100%; max-height: 70vh; max-height: 70dvh; display: block; }
 .phnav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.55); border: 0; color: #fff; font-size: 28px; width: 44px; height: 56px; justify-content: center; }
 .phnav.l { left: 6px; } .phnav.r { right: 6px; }
+
+/* ===== Режим приложения (iOS / Android, «На экран Домой») ===== */
+.logo img.mark { width: 34px; height: 34px; border-radius: 9px; display: block; }
+.tabbar { display: none; }
+@media (max-width: 860px) {
+  .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: rgba(22,25,32,.92); -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px);
+    border-top: 1px solid var(--line); padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left)); }
+  .tabbar a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0 3px; color: var(--muted); font-size: 10.5px; font-weight: 500; text-decoration: none; border-radius: 10px; min-width: 0; }
+  .tabbar a span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .tabbar a svg { width: 23px; height: 23px; }
+  .tabbar a.active { color: var(--accent); }
+  .tabbar a:active { background: var(--panel2); }
+  .main { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .toasts { bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .mobilebar #burger { display: none; }
+  .mobilebar b { text-align: center; }
+  .mobilebar::before { content: ''; width: 0; }
+  .modal .mf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+}
+.pwahint { border-color: var(--accent); background: var(--accentbg); }
+.shareic { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; font-size: 11px; }
+/* запуск с экрана «Домой» — ведём себя как приложение */
+html.pwa, html.pwa body { overscroll-behavior: none; }
+html.pwa .nav a, html.pwa .tabbar a, html.pwa button, html.pwa .chip, html.pwa .mobilebar { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.pwa .side { padding-top: max(16px, env(safe-area-inset-top)); }
+@media (min-width: 861px) { html.pwa .main { padding-top: max(22px, env(safe-area-inset-top)); } }

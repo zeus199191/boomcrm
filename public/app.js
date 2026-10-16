@@ -195,6 +195,12 @@ const ICONS = {
 };
 
 // ================= Каркас =================
+// нижняя панель вкладок на телефоне: 4 главных раздела + «Ещё»
+const tabItems = (allowed) => ['/', '/calendar', '/orders', isOffice() ? '/finance' : '/salary'].map((p) => allowed.find((n) => n[0] === p)).filter(Boolean)
+  .map(([p, t, ic]) => [p, { '/orders': 'Заказы' }[p] || t, ic]);
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+if (isStandalone()) document.documentElement.classList.add('pwa');
 const NAV = [
   ['/', 'Главная', 'home', 'all'],
   ['/calendar', 'Календарь', 'cal', 'all'],
@@ -217,26 +223,31 @@ function renderShell() {
   const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice()) || (n[3] === 'admin' && isAdmin()));
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
-    <div class="logo"><div class="mark">Б</div><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
+    <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
     <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : p === '/warranty' ? '<span class="badge red hidden" id="wBadge" title="Гарантия: 30+ дней"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
       ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
-  </aside><div class="scrim" id="scrim"></div><main class="main" id="page"></main></div>`;
+  </aside><div class="scrim" id="scrim"></div><main class="main" id="page"></main></div>
+  <nav class="tabbar" id="tabbar">${tabItems(allowed).map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span></a>`).join('')}<a href="#" id="tabMore">${ICONS.menu}<span>Ещё</span></a></nav>`;
   $('#logout').onclick = async () => { await POST('/api/logout'); S.me = null; renderLogin(); };
   $('#myPass').onclick = changeMyPassword;
   const mm = $('#myMax'); if (mm) mm.onclick = async () => { try { maxLinkModal(await POST('/api/me/max-link'), S.me.user.name); } catch (e) { toast(e.message, true); } };
   const sideOpen = (on) => { $('#side').classList.toggle('open', on); $('#scrim').classList.toggle('on', on); document.body.style.overflow = on ? 'hidden' : ''; };
   $('#burger').onclick = () => sideOpen(!$('#side').classList.contains('open'));
   $('#scrim').onclick = () => sideOpen(false);
+  $('#tabMore').onclick = (e) => { e.preventDefault(); sideOpen(!$('#side').classList.contains('open')); };
   $('#side').addEventListener('click', (e) => { if (e.target.closest('a')) sideOpen(false); });
 }
 
 function setActiveNav(path) {
-  $$('.nav a').forEach((a) => {
-    const p = a.dataset.p;
-    a.classList.toggle('active', p === '/' ? path === '/' : path.startsWith(p));
+  let title = '';
+  $$('.nav a, .tabbar a[data-p]').forEach((a) => {
+    const p = a.dataset.p; const on = p === '/' ? path === '/' : path.startsWith(p);
+    a.classList.toggle('active', on); if (on && !title) title = a.title || a.textContent.trim();
   });
+  const mb = $('.mobilebar b'); if (mb) mb.textContent = title && path !== '/' ? title : S.me.company;
+  const more = $('#tabMore'); if (more) more.classList.toggle('active', !$$('.tabbar a[data-p]').some((a) => a.classList.contains('active')));
 }
 
 async function refreshLeadsBadge() {
@@ -320,11 +331,17 @@ async function contractorsList(force) { if (!CACHE_CONTR || force) CACHE_CONTR =
 async function services() { if (!S.services) S.services = await GET('/api/services'); return S.services; }
 
 // ================= Главная =================
+function installHint() {
+  let hide = false; try { hide = localStorage.getItem('pwaHint') === '1'; } catch {}
+  if (hide || isStandalone() || !isIOS) return '';
+  return `<div class="card pwahint" id="pwaHint"><button type="button" class="ghost sm" id="pwaX" style="float:right">✕</button>
+    <b>📲 Установите CRM как приложение</b><div class="small muted" style="margin-top:4px">В Safari нажмите <b>«Поделиться»</b> <span class="shareic">⬆︎</span> внизу экрана → <b>«На экран „Домой“»</b> → «Добавить». CRM будет открываться со своим значком, на весь экран, без адресной строки.</div></div>`;
+}
 route(/^\/$/, async (page) => {
   const d = await GET('/api/dashboard');
   const d0 = nowTz();
   const stCounts = Object.fromEntries(d.by_status.map((x) => [x.status, x.n]));
-  page.innerHTML = `<div class="topbar"><div><h1>${d0.getHours() < 12 ? 'Доброе утро' : d0.getHours() < 18 ? 'Добрый день' : 'Добрый вечер'}, ${esc(S.me.user.name.split(' ')[0])}</h1>
+  page.innerHTML = installHint() + `<div class="topbar"><div><h1>${d0.getHours() < 12 ? 'Доброе утро' : d0.getHours() < 18 ? 'Добрый день' : 'Добрый вечер'}, ${esc(S.me.user.name.split(' ')[0])}</h1>
     <div class="muted">${DOW[d0.getDay()]}, ${d0.getDate()} ${MONTHS[d0.getMonth()]}</div></div><div class="sp"></div>
     ${isOffice() ? '<button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
   ${d.money ? `<div class="grid g4" style="margin-bottom:14px">
@@ -347,6 +364,7 @@ route(/^\/$/, async (page) => {
     ${d.debts ? `<div class="card"><h2>Долги клиентов</h2>${d.debts.length ? `<div class="list">${d.debts.map((x) => `<div class="li click" data-o="${x.id}"><div class="grow"><div class="t">${esc(x.client)}</div><div class="s">${orderNo(x.id)}</div></div><b class="mono">${rub(x.total - x.paid)}</b></div>`).join('')}</div>` : '<div class="empty">Долгов нет</div>'}</div>` : ''}
     ${d.low_stock ? `<div class="card"><h2>Заканчивается на складе</h2>${d.low_stock.length ? `<div class="list">${d.low_stock.map((p) => `<div class="li"><div class="grow t">${esc(p.name)}</div><span class="badge warn">${num(p.stock)} ${esc(p.unit)}</span></div>`).join('')}</div>` : '<div class="empty">Всё в наличии</div>'}</div>` : ''}
   </div></div>`;
+  const px = $('#pwaX', page); if (px) px.onclick = () => { try { localStorage.setItem('pwaHint', '1'); } catch {} $('#pwaHint', page).remove(); };
   page.addEventListener('click', (e) => { const li = e.target.closest('[data-o]'); if (li) go('/orders/' + li.dataset.o); });
   const nb = $('#newOrder', page); if (nb) nb.onclick = () => newOrderModal();
 });

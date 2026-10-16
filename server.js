@@ -38,6 +38,7 @@ const server = http.createServer(async (req, res) => {
 
     const cookies = parseCookies(req);
     const user = auth.userFromToken(cookies.sid);
+    if (user && user.renewed) res.setHeader('Set-Cookie', `sid=${cookies.sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${auth.SESSION_DAYS * 86400}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
 
     // Печатные формы
     const pm = /^\/print\/order\/(\d+)\/(naryad|act|warranty|accept)$/.exec(pathname);
