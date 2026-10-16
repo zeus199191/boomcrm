@@ -48,6 +48,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, print.render(o, pm[2]), { 'Content-Type': 'text/html; charset=utf-8' });
     }
 
+    const wp = /^\/print\/warranty\/(\d+)\/(accept|supplier)$/.exec(pathname);
+    if (wp) {
+      if (!user) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      if (user.role === 'master') throw new HttpError(403, 'Недостаточно прав');
+      return send(res, 200, print.warrantyClaim(require('./lib/warranty').load(+wp[1]), wp[2]), { 'Content-Type': 'text/html; charset=utf-8' });
+    }
+
     const sv = /^\/print\/contractor\/(\d+)\/sverka$/.exec(pathname);
     if (sv) {
       if (!user) { res.writeHead(302, { Location: '/' }); return res.end(); }
@@ -96,6 +103,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`CRM запущена: http://${HOST}:${PORT}`);
   require('./lib/notify').start(botHandlers);
+  require('./lib/warranty').start();
 });
 
 const shutdown = () => { server.close(); process.exit(0); };

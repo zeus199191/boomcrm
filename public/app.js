@@ -186,6 +186,7 @@ const ICONS = {
   users: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/>'),
   settings: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   partners: I('<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6M8 10h.01M12 10h.01M16 10h.01"/>'),
+  shield: I('<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>'),
   chat: I('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
 };
@@ -201,6 +202,7 @@ const NAV = [
   ['/stock', 'Склад', 'stock', 'office'],
   ['/services', 'Услуги и цены', 'services', 'office'],
   ['/contractors', 'Контрагенты', 'partners', 'office'],
+  ['/warranty', 'Гарантия', 'shield', 'office'],
   ['/finance', 'Финансы', 'money', 'office'],
   ['/salary', 'Зарплата', 'salary', 'all'],
   ['/users', 'Сотрудники', 'users', 'admin'],
@@ -213,7 +215,7 @@ function renderShell() {
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><div class="mark">Б</div><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
-    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : ''}</a>`).join('')}</nav>
+    <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : p === '/warranty' ? '<span class="badge red hidden" id="wBadge" title="Гарантия: 30+ дней"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
       ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
@@ -242,6 +244,8 @@ async function refreshLeadsBadge() {
     b.textContent = d.length; b.classList.toggle('hidden', !d.length);
     const m = await GET('/api/messages/unread'); const mb = $('#msgBadge');
     if (mb) { mb.textContent = m.n; mb.classList.toggle('hidden', !m.n); }
+    const w = await GET('/api/warranty/summary'); const wb = $('#wBadge');
+    if (wb) { wb.textContent = w.over30; wb.classList.toggle('hidden', !w.over30); }
   } catch {}
 }
 
@@ -336,6 +340,7 @@ route(/^\/$/, async (page) => {
       <div class="li click" data-o="${o.id}"><div class="grow"><div class="t">${orderNo(o.id)} · ${esc(o.client)}</div><div class="s">${esc(carStr(o))}${o.master ? ' · ' + esc(o.master) : ''}</div></div>${stBadge(o.status)}</div>`).join('')}</div>` : '<div class="empty">Нет автомобилей в работе</div>'}</div>
   </div><div>
     ${d.new_leads ? `<a class="card" href="#/leads" style="display:block;border-color:var(--accent);color:inherit;text-decoration:none;margin-bottom:14px"><h2 style="margin:0">🔥 Новых заявок: ${d.new_leads}</h2><div class="muted small">Перезвоните, пока клиент тёплый</div></a>` : ''}
+    ${d.warranty && d.warranty.length ? `<div class="card"><div class="inline" style="margin-bottom:8px"><h2 style="margin:0;flex:1">🛡 Гарантия</h2><a class="small" href="#/warranty">все →</a></div><div class="list">${d.warranty.slice(0, 8).map((w) => `<a class="li click" href="#/warranty/${w.id}" style="color:inherit;text-decoration:none"><div class="grow"><div class="t">${esc(w.product_name)}</div><div class="s">${esc(w.client || '')}${w.supplier ? ' · ' + esc(w.supplier) : ''}</div></div>${wDays(w)}</a>`).join('')}</div></div>` : ''}
     ${d.debts ? `<div class="card"><h2>Долги клиентов</h2>${d.debts.length ? `<div class="list">${d.debts.map((x) => `<div class="li click" data-o="${x.id}"><div class="grow"><div class="t">${esc(x.client)}</div><div class="s">${orderNo(x.id)}</div></div><b class="mono">${rub(x.total - x.paid)}</b></div>`).join('')}</div>` : '<div class="empty">Долгов нет</div>'}</div>` : ''}
     ${d.low_stock ? `<div class="card"><h2>Заканчивается на складе</h2>${d.low_stock.length ? `<div class="list">${d.low_stock.map((p) => `<div class="li"><div class="grow t">${esc(p.name)}</div><span class="badge warn">${num(p.stock)} ${esc(p.unit)}</span></div>`).join('')}</div>` : '<div class="empty">Всё в наличии</div>'}</div>` : ''}
   </div></div>`;
@@ -562,7 +567,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const issuedLocked = o.status === 'issued';
 
   page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>Заказ ${o.number}</h1>${stBadge(o.status)}<div class="sp"></div>
-    ${office ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a></div>` : ''}</div>
+    ${office ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a><button class="sm" id="toWarranty">🛡 Принять на гарантию</button></div>` : ''}</div>
   <div class="card" style="margin-bottom:14px"><h3>Статус</h3><div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>
     ${o.status === 'done' && office && t.due > 0.5 ? `<div class="small" style="margin-top:8px;color:var(--warn)">Перед выдачей примите оплату: к оплате ${rub(t.due)}</div>` : ''}</div>
   <div class="grid g-main"><div>
@@ -619,6 +624,16 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     if (st === 'cancelled' && !(await confirmBox('Отменить заказ?', 'Отменить заказ'))) return;
     try { await POST(`/api/orders/${o.id}/status`, { status: st }); toast('Статус: ' + S.me.statuses[st]); reload(); } catch (e) { toast(e.message, true); }
   }));
+  const twb = $('#toWarranty', page);
+  if (twb) twb.onclick = () => {
+    const pr = o.items.filter((i) => i.kind === 'product');
+    const pick = (i) => warrantyModal({ order_id: o.id, client_id: o.client_id, client_name: o.client_name, client_phone: o.client_phone,
+      product_id: i ? i.ref_id : '', product_name: i ? i.name : '', qty: 1, sale_date: (o.issued_at || o.done_at || o.created_at || '').slice(0, 10),
+      contractor_id: i ? i.contractor_id : '' }, (id) => go('/warranty/' + id));
+    if (pr.length < 2) return pick(pr[0]);
+    const m = modal('Какой товар принимаем?', `<div class="list">${pr.map((i, n) => `<div class="li click" data-pi="${n}"><div class="grow t">${esc(i.name)}</div></div>`).join('')}<div class="li click" data-pi="-1"><div class="grow muted">Другой товар…</div></div></div>`, { footer: '<button type="button" data-x>Отмена</button>' });
+    $$('[data-pi]', m.el).forEach((e) => (e.onclick = () => { m.close(); pick(pr[+e.dataset.pi]); }));
+  };
   $('#addCmt', page).onclick = async () => {
     const v = $('#cmt', page).value.trim(); if (!v) return;
     await POST(`/api/orders/${o.id}/comment`, { text: v }); reload();
@@ -1188,6 +1203,181 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
   $$('[data-o]', page).forEach((e) => (e.onclick = () => go('/orders/' + e.dataset.o)));
   $$('[data-delop]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию?', 'Удалить')) { await DEL('/api/contractor-ops/' + b.dataset.delop); navigate(); } }));
   $$('[data-delpay]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить платёж из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delpay); navigate(); } }));
+});
+
+// ================= Гарантия =================
+let WMETA = null;
+async function wMeta(force) { if (!WMETA || force) WMETA = await GET('/api/warranty/meta'); return WMETA; }
+const W_ST_CLS = { received: 'warn', sent: '', returned: 'ok', closed: '' };
+const wBadge = (st) => `<span class="badge ${W_ST_CLS[st] || ''}">${esc((WMETA && WMETA.statuses[st]) || st)}</span>`;
+// Дни с приёма: до 30 — обычно, 30+ — жёлтый, 40+ — красный, 45+ — красный с заливкой
+function wDays(w) {
+  if (w.status === 'closed') return '<span class="muted">—</span>';
+  const d = w.days;
+  const cls = d >= 45 ? 'red' : d >= 40 ? 'red' : d >= 30 ? 'warn' : '';
+  const st = d >= 40 && d < 45 ? 'style="background:rgba(231,76,60,.16);color:var(--bad)"' : '';
+  return `<span class="badge ${cls}" ${st} title="Дней с момента приёма">${d} дн.</span>`;
+}
+
+async function warrantyModal(c = {}, onDone) {
+  const meta = await wMeta();
+  const contrs = await contractorsList();
+  const sups = [...contrs].sort((a, b) => (a.kind === 'supplier' ? 0 : 1) - (b.kind === 'supplier' ? 0 : 1) || a.name.localeCompare(b.name));
+  const defResp = c.id ? c.responsible_id : (meta.controllers[0] || {}).id;
+  modal(c.id ? `Гарантия ${c.number}` : 'Приём товара на гарантию', `
+    <input type="hidden" name="client_id" value="${esc(c.client_id || '')}"><input type="hidden" name="product_id" value="${esc(c.product_id || '')}">
+    <input type="hidden" name="order_id" value="${esc(c.order_id || '')}">
+    <div class="row"><div class="field"><label>Дата приёма *</label><input type="date" name="received_at" required value="${esc((c.received_at || today()).slice(0, 10))}"></div>
+      <div class="field"><label>Поставщик</label><select name="contractor_id">${opts(sups.map((k) => [k.id, k.name + (k.kind !== 'supplier' ? ' (' + (S.me.contractor_kinds[k.kind] || '') + ')' : '')]), c.contractor_id, '— выберите —')}</select>
+        <div class="small"><a href="#" id="newSup">+ новый поставщик</a></div></div></div>
+    <div class="field"><label>Клиент</label><input id="wcq" placeholder="Поиск: имя, телефон, госномер" value="${esc(c.client_id ? [c.client_name, c.client_phone].filter(Boolean).join(' · ') : '')}"></div>
+    <div class="row"><div class="field"><label>Имя клиента</label><input name="client_name" value="${esc(c.client_name || '')}"></div>
+      <div class="field"><label>Телефон</label><input name="client_phone" value="${esc(c.client_phone || '')}"></div></div>
+    <div class="field"><label>Товар *</label><input name="product_name" id="wpq" required value="${esc(c.product_name || '')}" placeholder="Начните вводить — подскажем со склада"></div>
+    <div class="row"><div class="field"><label>Серийный номер</label><input name="serial" value="${esc(c.serial || '')}"></div>
+      <div class="field"><label>Кол-во</label><input type="number" name="qty" min="1" step="any" value="${esc(c.qty || 1)}"></div>
+      <div class="field"><label>Дата продажи / установки</label><input type="date" name="sale_date" value="${esc(c.sale_date || '')}"></div></div>
+    <div class="field"><label>Неисправность со слов клиента</label><textarea name="defect" rows="2" placeholder="Не включается, хрипит левый канал, нет звука…">${esc(c.defect || '')}</textarea></div>
+    <div class="field"><label>Комплектность, внешний вид</label><textarea name="kit" rows="2" placeholder="Коробка, провода, пульт; царапины на корпусе…">${esc(c.kit || '')}</textarea></div>
+    <div class="row"><div class="field"><label>Ответственный (контроль сроков)</label><select name="responsible_id">${opts(S.staff.filter((u) => u.role !== 'master').map((u) => [u.id, u.name]), defResp, '—')}</select></div>
+      <div class="field"><label>Заметки</label><input name="notes" value="${esc(c.notes || '')}"></div></div>
+    ${c.order_id ? `<div class="small muted">Связан с заказом <a href="#/orders/${c.order_id}">${orderNo(c.order_id)}</a></div>` : ''}`,
+  { wide: true, submit: c.id ? 'Сохранить' : 'Принять на гарантию',
+    onOpen: (f) => {
+      autocomplete($('#wcq', f), {
+        search: async (q) => (await GET('/api/clients' + qs({ q, limit: 10 }))).rows,
+        render: (x) => `<div>${esc(x.name)} <span class="s">${esc(x.phone || '')}</span></div><div class="s">${esc(x.cars || '')}</div>`,
+        onPick: (x) => { f.client_id.value = x.id; f.client_name.value = x.name; f.client_phone.value = x.phone || ''; $('#wcq', f).value = x.name + (x.phone ? ' · ' + x.phone : ''); },
+      });
+      $('#wcq', f).addEventListener('input', () => { f.client_id.value = ''; });
+      autocomplete($('#wpq', f), {
+        search: async (q) => (q.length < 2 ? [] : (await GET('/api/products' + qs({ q }))).slice(0, 12)),
+        render: (p) => `<div>${esc(p.name)}</div><div class="s">${esc([p.sku, p.brand, p.warranty_months ? 'гарантия ' + p.warranty_months + ' мес.' : ''].filter(Boolean).join(' · '))}</div>`,
+        onPick: (p) => { f.product_id.value = p.id; $('#wpq', f).value = p.name; },
+      });
+      $('#wpq', f).addEventListener('input', () => { f.product_id.value = ''; });
+      $('#newSup', f).onclick = (e) => { e.preventDefault(); contractorModal({ kind: 'supplier', active: 1 }, async (id) => {
+        CACHE_CONTR = null; const list = await contractorsList(); const k = list.find((x) => x.id === id);
+        if (k) { f.contractor_id.insertAdjacentHTML('beforeend', `<option value="${k.id}">${esc(k.name)}</option>`); f.contractor_id.value = k.id; } }); };
+    },
+    onSubmit: async (d) => {
+      const r = c.id ? await PUT('/api/warranty/' + c.id, d) : await POST('/api/warranty', d);
+      toast(c.id ? 'Сохранено' : 'Принято на гарантию'); refreshLeadsBadge();
+      onDone ? onDone(r.id) : navigate();
+    } });
+}
+
+function warrantySettingsModal(meta) {
+  const cur = (meta.controller_ids || '').split(',').filter(Boolean).map(Number);
+  const staff = S.staff.filter((u) => u.role !== 'master' || cur.includes(u.id));
+  const auto = !cur.length && meta.controllers.length ? meta.controllers.map((u) => u.id) : cur;
+  modal('Напоминания по гарантии', `
+    <p class="small muted">Напоминание приходит в MAX (если MAX не подключён — в Telegram) контролёрам и ответственному по случаю, пока товар не выдан клиенту. Отсчёт — от даты приёма. По закону срок — не более ${meta.legal_days} дней.</p>
+    <div class="field"><label>Кого напоминать</label>${staff.map((u) => `<label class="inline" style="color:var(--text)"><input type="checkbox" name="c_${u.id}" ${auto.includes(u.id) ? 'checked' : ''}> ${esc(u.name)} ${u.max ? '<span class="badge ok">MAX</span>' : '<span class="badge warn">MAX не подключён</span>'}</label>`).join('')}</div>
+    <div class="row"><div class="field"><label>На какой день (через запятую)</label><input name="days" value="${esc(meta.days)}"></div>
+      <div class="field"><label>Время отправки</label><input type="time" name="time" value="${esc(meta.time)}"></div></div>`,
+  { onSubmit: async (d) => {
+    const ids = Object.keys(d).filter((k) => k.startsWith('c_') && d[k]).map((k) => +k.slice(2));
+    await PUT('/api/warranty/settings', { controllers: ids, days: d.days, time: d.time }); await wMeta(true); toast('Сохранено'); navigate();
+  } });
+}
+
+route(/^\/warranty$/, async (page, query) => {
+  const meta = await wMeta(true);
+  let status = query.status || 'open', sup = '';
+  const contrs = await contractorsList();
+  const ctl = meta.controllers.map((u) => esc(u.name) + (u.max ? '' : ' <span class="badge warn" title="Не подключён к MAX">нет MAX</span>')).join(', ');
+  page.innerHTML = `<div class="topbar"><h1>Гарантия</h1><div class="sp"></div><input class="search" id="q" placeholder="Товар, S/N, клиент, номер">
+    ${isAdmin() ? '<button id="wset">🔔 Напоминания</button>' : ''}<button class="primary" id="add">+ Принять на гарантию</button></div>
+    <div class="grid g4" style="margin-bottom:14px" id="sum"></div>
+    <div class="inline" style="margin-bottom:12px;flex-wrap:wrap;gap:8px"><div class="chips">${[['open', 'Открытые'], ...Object.entries(meta.statuses), ['', 'Все']].map(([k, t]) => `<button class="chip ${k === status ? 'on' : ''}" data-s="${k}">${t}</button>`).join('')}</div>
+      <div class="sp"></div><select id="sup" style="max-width:240px">${opts(contrs.map((k) => [k.id, k.name]), '', 'Все поставщики')}</select></div>
+    <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>
+    <div class="small muted" style="margin-top:8px">Напоминания в MAX: ${ctl || '<span style="color:var(--bad)">контролёр не выбран</span>'} — на ${esc(meta.days.split(',').join(', '))} день с приёма, в ${esc(meta.time)}.</div>`;
+  const load = async () => {
+    const s = await GET('/api/warranty/summary');
+    $('#sum', page).innerHTML = `<div class="kpi"><div class="l">Открытых случаев</div><div class="v">${s.open}</div></div>
+      <div class="kpi"><div class="l">У поставщиков</div><div class="v">${s.at_supplier}</div></div>
+      <div class="kpi"><div class="l">Больше 30 дней</div><div class="v ${s.over30 ? 'bad' : ''}">${s.over30}</div></div>
+      <div class="kpi"><div class="l">Срок 45 дней истёк</div><div class="v ${s.over45 ? 'bad' : 'ok'}">${s.over45}</div></div>`;
+    const rows = await GET('/api/warranty' + qs({ status, contractor_id: sup, q: $('#q', page).value }));
+    $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>№</th><th>Принят</th><th>Дней</th><th>Товар</th><th>Клиент</th><th>Поставщик</th><th>Статус</th></tr></thead><tbody>
+      ${rows.map((w) => `<tr class="click" data-id="${w.id}" style="${w.status === 'closed' ? 'opacity:.55' : ''}"><td data-l="№"><b>${esc(w.number)}</b></td><td data-l="Принят" class="nowrap">${dmy(w.received_at)}</td><td data-l="Дней">${wDays(w)}</td>
+        <td data-l="Товар">${esc(w.product_name)}${w.serial ? `<div class="small muted">S/N ${esc(w.serial)}</div>` : ''}</td>
+        <td data-l="Клиент">${esc(w.client_name || '')}${w.client_phone ? `<div class="small muted">${esc(w.client_phone)}</div>` : ''}</td>
+        <td data-l="Поставщик">${w.supplier ? esc(w.supplier) : '<span class="muted">не выбран</span>'}${w.sent_at ? `<div class="small muted">передан ${dmy(w.sent_at)}</div>` : ''}</td>
+        <td data-l="Статус">${wBadge(w.status)}</td></tr>`).join('')}</tbody></table>`
+      : `<div class="empty">${status === 'open' ? 'Открытых гарантийных случаев нет' : 'Ничего не найдено'}</div>`;
+  };
+  $$('[data-s]', page).forEach((b) => (b.onclick = () => { status = b.dataset.s; $$('[data-s]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
+  $('#sup', page).onchange = (e) => { sup = e.target.value; load(); };
+  $('#q', page).oninput = debounce(load, 300);
+  $('#add', page).onclick = () => warrantyModal({}, (id) => go('/warranty/' + id));
+  const ws = $('#wset', page); if (ws) ws.onclick = () => warrantySettingsModal(meta);
+  $('#list', page).onclick = (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) go('/warranty/' + tr.dataset.id); };
+  await load();
+});
+
+route(/^\/warranty\/(\d+)$/, async (page, id) => {
+  const meta = await wMeta();
+  const c = await GET('/api/warranty/' + id);
+  const left = meta.legal_days - c.days;
+  const steps = [['received', 'Принят от клиента', c.received_at], ['sent', 'Передан поставщику', c.sent_at], ['returned', 'Вернулся от поставщика', c.returned_at], ['closed', 'Выдан клиенту', c.closed_at]];
+  const curI = steps.findIndex((s) => s[0] === c.status);
+  const next = { received: ['sent', '📦 Передать поставщику'], sent: ['returned', '↩️ Вернулся от поставщика'], returned: ['closed', '✅ Выдать клиенту / закрыть'] }[c.status];
+  const contrs = await contractorsList();
+  page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>Гарантия ${esc(c.number)}</h1>${wBadge(c.status)}<div class="sp"></div>
+    <a class="btn sm" target="_blank" href="/print/warranty/${c.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/warranty/${c.id}/supplier">🖨 Акт поставщику</a>
+    <button id="edit">Изменить</button>${isAdmin() ? '<button class="ghost danger" id="del">Удалить</button>' : ''}</div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="kpi"><div class="l">Принят</div><div class="v" style="font-size:18px">${dmy(c.received_at)}</div></div>
+    <div class="kpi"><div class="l">Прошло дней</div><div class="v ${c.status === 'closed' ? '' : c.days >= 40 ? 'bad' : c.days >= 30 ? '' : 'acc'}" ${c.status !== 'closed' && c.days >= 30 && c.days < 40 ? 'style="color:var(--warn)"' : ''}>${c.days}</div></div>
+    <div class="kpi"><div class="l">Срок ${meta.legal_days} дней</div><div class="v" style="font-size:18px">${dmy(c.deadline)}</div><div class="small ${left < 0 && c.status !== 'closed' ? 'bad' : 'muted'}">${c.status === 'closed' ? 'закрыт ' + dmy(c.closed_at) : left >= 0 ? 'осталось ' + left + ' дн.' : 'просрочено на ' + -left + ' дн.'}</div></div>
+    <div class="kpi"><div class="l">Поставщик</div><div class="v" style="font-size:16px">${c.supplier ? `<a href="#/contractors/${c.contractor_id}">${esc(c.supplier)}</a>` : '<span class="muted">не выбран</span>'}</div>${c.supplier_phone ? `<div class="small"><a href="tel:${esc(c.supplier_phone)}">${esc(c.supplier_phone)}</a></div>` : ''}</div></div>
+  <div class="card" style="margin-bottom:14px"><div class="pipe">${steps.map((s, i) => `<button type="button" class="${i === curI ? 'cur' : ''}" data-st="${s[0]}" ${i < curI ? 'style="opacity:.7"' : ''}>${i <= curI && s[2] ? '✓ ' : ''}${s[1]}${s[2] ? `<span class="small" style="display:block;opacity:.75">${dmy(s[2])}</span>` : ''}</button>`).join('')}</div>
+    <div class="inline" style="margin-top:10px">${next ? `<button class="primary" id="next">${next[1]}</button>` : ''}<button id="remind">🔔 Напомнить в MAX сейчас</button></div></div>
+  <div class="grid g-main"><div>
+    <div class="card"><h2>Товар</h2>
+      <div class="field"><b style="font-size:16px">${esc(c.product_name)}</b>${c.qty > 1 ? ` × ${num(c.qty)}` : ''}</div>
+      ${c.serial ? `<div class="field">S/N: <span class="mono">${esc(c.serial)}</span></div>` : ''}
+      ${c.sale_date ? `<div class="field">Продан / установлен: ${dmy(c.sale_date)}</div>` : ''}
+      ${c.order_id ? `<div class="field">Заказ: <a href="#/orders/${c.order_id}">${orderNo(c.order_id)}</a></div>` : ''}
+      <h3>Неисправность</h3><div style="white-space:pre-wrap">${esc(c.defect || '—')}</div>
+      <h3>Комплектность, внешний вид</h3><div style="white-space:pre-wrap">${esc(c.kit || '—')}</div>
+      ${c.sent_doc ? `<h3>Документ передачи / трек</h3><div>${esc(c.sent_doc)}</div>` : ''}
+      ${c.outcome || c.outcome_note ? `<h3>Результат</h3><div>${esc(meta.outcomes[c.outcome] || '')} ${esc(c.outcome_note || '')}</div>` : ''}
+      ${c.notes ? `<h3>Заметки</h3><div style="white-space:pre-wrap">${esc(c.notes)}</div>` : ''}</div>
+    <div class="card"><h2>История</h2>
+      <form id="cm" class="inline" style="margin-bottom:10px;flex-wrap:nowrap"><input name="text" placeholder="Комментарий: звонил поставщику, ответили…"><button class="sm">Добавить</button></form>
+      <div class="list">${c.log.map((l) => `<div class="li"><div class="grow"><div class="t" style="font-weight:400;white-space:pre-wrap">${esc(l.text)}</div><div class="s">${dt(l.created_at)}${l.user ? ' · ' + esc(l.user) : ''}</div></div></div>`).join('')}</div></div>
+  </div><div>
+    <div class="card"><h2>Клиент</h2>
+      <div class="field"><b>${c.client_id ? `<a href="#/clients/${c.client_id}">${esc(c.client_name || '')}</a>` : esc(c.client_name || '—')}</b></div>
+      ${c.client_phone ? `<div class="field"><a href="tel:${esc(c.client_phone)}">${esc(c.client_phone)}</a></div>` : ''}</div>
+    <div class="card"><h2>Контроль сроков</h2>
+      <div class="field">Ответственный: <b>${esc(c.responsible || '—')}</b></div>
+      <div class="small muted">Напоминания: ${esc(meta.days.split(',').join(', '))} день → ${meta.controllers.map((u) => esc(u.name)).join(', ') || 'контролёр не выбран'}</div>
+      ${c.reminders.length ? `<div class="list" style="margin-top:8px">${c.reminders.map((r) => `<div class="li"><div class="grow"><div class="t">🔔 ${r.day} день</div><div class="s">${dt(r.sent_at)} · ${esc(r.channels || '')}</div></div></div>`).join('')}</div>` : ''}</div>
+  </div></div>`;
+
+  const statusModal = (st) => {
+    const titles = { sent: 'Передача поставщику', returned: 'Товар вернулся от поставщика', closed: 'Выдача клиенту / закрытие', received: 'Вернуть в «Принят от клиента»' };
+    modal(titles[st], `<div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
+      ${st === 'sent' ? `<div class="field"><label>Поставщик</label><select name="contractor_id">${opts(contrs.map((k) => [k.id, k.name]), c.contractor_id, '— выберите —')}</select></div>` : ''}</div>
+      ${st === 'sent' ? `<div class="field"><label>№ накладной / акта / трек-номер</label><input name="sent_doc" value="${esc(c.sent_doc || '')}" placeholder="СДЭК 1234567890, акт №…"></div>` : ''}
+      ${st === 'returned' || st === 'closed' ? `<div class="field"><label>Результат</label><select name="outcome">${opts(Object.entries(meta.outcomes), c.outcome, '—')}</select></div>
+        <div class="field"><label>Комментарий</label><input name="outcome_note" value="${esc(c.outcome_note || '')}" placeholder="Заменили на новый S/N…, деньги вернули на карту…"></div>` : ''}`,
+    { submit: 'Сохранить', onSubmit: async (d) => {
+      if (st === 'sent' && !d.contractor_id) { toast('Выберите поставщика', true); return false; }
+      await POST(`/api/warranty/${c.id}/status`, { ...d, status: st }); toast('Готово'); navigate();
+    } });
+  };
+  const nb = $('#next', page); if (nb) nb.onclick = () => statusModal(next[0]);
+  $$('[data-st]', page).forEach((b) => (b.onclick = () => { if (b.dataset.st !== c.status) statusModal(b.dataset.st); }));
+  $('#edit', page).onclick = () => warrantyModal(c);
+  const del = $('#del', page); if (del) del.onclick = async () => { if (await confirmBox(`Удалить гарантийный случай ${c.number}?`, 'Удалить')) { await DEL('/api/warranty/' + c.id); go('/warranty'); } };
+  $('#remind', page).onclick = async () => { try { const r = await POST(`/api/warranty/${c.id}/remind`); toast('Отправлено: ' + r.used.join('; ')); navigate(); } catch (e) { toast(e.message, true); } };
+  $('#cm', page).onsubmit = async (e) => { e.preventDefault(); const t = e.target.text.value.trim(); if (!t) return; await POST(`/api/warranty/${c.id}/comment`, { text: t }); navigate(); };
 });
 
 // ================= Финансы =================
