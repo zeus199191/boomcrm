@@ -24,6 +24,7 @@ const dt = (s) => (s ? dmy(s) + (s.length > 10 ? ' ' + s.slice(11, 16) : '') : '
 const orderNo = (id) => 'БС-' + String(id).padStart(5, '0');
 const carStr = (o) => [o.brand, o.model].filter(Boolean).join(' ') + (o.plate ? ` · ${o.plate}` : '');
 const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+const MONTHS_NOM = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const METHODS = { cash: 'Наличные', card: 'Карта', transfer: 'Счёт' };
 const ROLES = { admin: 'Администратор', senior: 'Руководитель-мастер', manager: 'Менеджер', master: 'Мастер' };
@@ -81,6 +82,28 @@ function opts(list, cur, empty) {
     list.map((x) => { const [v, t] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}" ${String(v) === String(cur ?? '') ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
 }
 const masters = () => S.staff.filter((u) => u.can_work || u.role === 'admin');
+// График: отсутствующие мастера на даты записи → «(Н/Р)» и красный цвет
+let ABS = {};
+async function absentFor(from, to) {
+  if (!from) return {}; from = String(from).slice(0, 10); to = to ? String(to).slice(0, 10) : from;
+  const k = from + '|' + to; if (!ABS[k]) ABS[k] = GET('/api/schedule/absent' + qs({ from, to })).catch(() => ({}));
+  return ABS[k];
+}
+function masterOpts(cur, abs = {}) {
+  return '<option value="">—</option>' + masters().map((u) => { const a = abs[u.id];
+    return `<option value="${u.id}" ${String(u.id) === String(cur ?? '') ? 'selected' : ''}${a ? ' class="nr"' : ''}>${esc(u.name)}${a ? ' (Н/Р)' : ''}</option>`; }).join('');
+}
+async function markMasters(root, from, to) {
+  const abs = await absentFor(from, to);
+  $$('select[name=master_id], select[data-f=master_id]', root).forEach((sel) => {
+    const v = sel.value; sel.innerHTML = masterOpts(v, abs); sel.value = v;
+    const paint = () => { const a = abs[sel.value]; sel.classList.toggle('nr', !!a);
+      let w = sel.nextElementSibling; if (!w || !w.classList.contains('nrw')) { w = document.createElement('div'); w.className = 'nrw'; sel.after(w); }
+      w.textContent = a ? `Не работает по графику: ${a.map((d) => d.slice(8, 10) + '.' + d.slice(5, 7)).join(', ')}` : ''; };
+    if (!sel.dataset.nrb) { sel.dataset.nrb = 1; sel.addEventListener('change', paint); }
+    paint();
+  });
+}
 const canWork = () => myRole() === 'master' || myRole() === 'senior';
 
 // ================= Модальные окна =================
@@ -341,7 +364,7 @@ async function newOrderModal(pre = {}) {
       <div class="field"><label>Стоит на посту до (включительно)</label><input type="date" name="end_date" value="${esc(pre.end_date || '')}"></div>
       <div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${pre.duration_h || 2}" step="0.5" min="0.5"></div>
       <div class="field"><label>Пост</label><select name="bay">${opts(bays, pre.bay, '—')}</select></div>
-      <div class="field"><label>Мастер</label><select name="master_id">${opts(masters().map((u) => [u.id, u.name]), pre.master_id, '—')}</select></div></div>
+      <div class="field"><label>Мастер</label><select name="master_id">${masterOpts(pre.master_id)}</select></div></div>
     <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>`,
   { wide: true, submit: 'Создать заказ', onSubmit: async (d) => {
     if (d.scheduled_at && isDayOff(d.scheduled_at) && !(await confirmBox(`${dmy(d.scheduled_at)} — выходной день. Записать в виде исключения?`, 'Да, записать'))) return false;
@@ -357,6 +380,8 @@ async function newOrderModal(pre = {}) {
     go('/orders/' + r.id);
   } });
   const f = m.form;
+  const remark = () => markMasters(f, f.scheduled_at.value, f.end_date.value);
+  f.scheduled_at.addEventListener('change', remark); f.end_date.addEventListener('change', remark); remark();
   const setNew = (on) => { $('#newClient', f).classList.toggle('hidden', !on); $('#clientPick', f).classList.toggle('hidden', on); if (on) { f.client_id.value = ''; loadCars(null); } };
   $('#toNew', f).onclick = (e) => { e.preventDefault(); setNew(true); f.nc_name.focus(); };
   $('#toSearch', f).onclick = (e) => { e.preventDefault(); setNew(false); };
@@ -472,7 +497,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
   const itemRows = (list, kind) => list.map((i) => `<tr data-item="${i.id}">
     <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}${i.contractor_name ? `<div class="small muted">🚚 ${esc(i.contractor_name)}${i.supplied_qty ? ` · в долг ${num(i.supplied_qty)} шт` : ''}</div>` : ''}</td>
-    ${kind === 'service' ? `<td data-l="Мастер">${office ? `<select data-f="master_id">${opts(masters().map((u) => [u.id, u.name]), i.master_id, '—')}</select>` : esc(i.master_name || '—')}</td>` : ''}
+    ${kind === 'service' ? `<td data-l="Мастер">${office ? `<select data-f="master_id">${masterOpts(i.master_id)}</select>` : esc(i.master_name || '—')}</td>` : ''}
     <td data-l="Кол-во" style="width:90px">${office ? `<input type="number" step="any" min="0" value="${i.qty}" data-f="qty">` : i.qty}</td>
     <td data-l="Цена" style="width:120px">${office ? `<input type="number" step="any" min="0" value="${i.price}" data-f="price">` : num(i.price)}</td>
     <td data-l="Сумма" class="r mono" style="width:110px">${num(i.qty * i.price)}</td>
@@ -519,7 +544,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div class="row"><div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${(o.duration_min || 120) / 60}" step="0.5" min="0.5" ${office ? '' : 'disabled'}></div>
       <div class="field"><label>Пост</label><select name="bay" ${office ? '' : 'disabled'}>${opts(S.me.bays, o.bay, '—')}</select></div></div>
       ${office ? `<div class="field"><label>Контрагент (партнёр / плательщик)</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name]), o.contractor_id, '— частный клиент —')}</select></div>` : ''}
-      <div class="row"><div class="field"><label>Мастер</label><select name="master_id" ${office ? '' : 'disabled'}>${opts(masters().map((u) => [u.id, u.name]), o.master_id, '—')}</select></div>
+      <div class="row"><div class="field"><label>Мастер</label><select name="master_id" ${office ? '' : 'disabled'}>${masterOpts(o.master_id)}</select></div>
       <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${office ? '' : 'disabled'}></div></div>
       <div class="field"><label>Пожелания клиента</label><textarea name="complaint" ${office ? '' : 'disabled'}>${esc(o.complaint || '')}</textarea></div>
       <div class="field"><label>Внутренние заметки</label><textarea name="notes" ${office ? '' : 'disabled'}>${esc(o.notes || '')}</textarea></div>
@@ -544,6 +569,9 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   };
   $('#cmt', page).onkeydown = (e) => { if (e.key === 'Enter') $('#addCmt', page).click(); };
   if (!office) return;
+  if (o.scheduled_at) markMasters(page, o.scheduled_at, o.end_date);
+  { const of = $('#of', page); const rm = () => markMasters(page, of.scheduled_at.value, of.end_date.value);
+    of.scheduled_at.addEventListener('change', rm); of.end_date.addEventListener('change', rm); }
 
   $('#of', page).onsubmit = async (e) => {
     e.preventDefault();
@@ -636,7 +664,8 @@ route(/^\/calendar$/, async (page, query) => {
     const d = new Date(date + 'T00:00');
     let from = date, to = date;
     if (view === 'journal') { const en = new Date(d); en.setDate(d.getDate() + DAYS - 1); to = ymd(en); }
-    const data = await GET('/api/calendar' + qs({ from, to, format: 'journal' }));
+    const [data, absJ] = await Promise.all([GET('/api/calendar' + qs({ from, to, format: 'journal' })), view === 'journal' ? absentFor(from, to) : {}]);
+    const absOn = (ds) => masters().filter((u) => (absJ[u.id] || []).includes(ds)).map((u) => u.name);
     const rows = data.orders, notes = data.notes;
     const title = view === 'day' ? `${DOW[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}` : `${dmy(from)} — ${dmy(to)}`;
     page.innerHTML = `<div class="topbar"><h1>${view === 'journal' ? 'Журнал записи' : 'Календарь'}</h1><div class="inline"><button id="prev">‹</button><button id="tod">Сегодня</button><button id="next">›</button></div>
@@ -662,7 +691,7 @@ route(/^\/calendar$/, async (page, query) => {
       const noteCard = (n) => `<div class="jc note" data-note="${n.id}" style="--c:${n.color || '#ffe599'}">${esc(n.text)}</div>`;
       box.innerHTML = `<div class="jwrap"><table class="jr"><thead><tr><th class="jd">Дата</th>${cols.map((c) => `<th>${c ? esc(c) : 'Заметки дня'}</th>`).join('')}</tr></thead><tbody>
         ${days.map((ds) => { const x = new Date(ds + 'T00:00'); const off = isDayOff(ds);
-          return `<tr class="${ds === today() ? 'today' : ''} ${off ? 'off' : ''}"><td class="jd"><b>${pad(x.getDate())}.${pad(x.getMonth() + 1)}</b><div>${DOW[x.getDay()]}</div>${off ? '<div class="offl">выходной</div>' : ''}</td>
+          return `<tr class="${ds === today() ? 'today' : ''} ${off ? 'off' : ''}"><td class="jd"><b>${pad(x.getDate())}.${pad(x.getMonth() + 1)}</b><div>${DOW[x.getDay()]}</div>${off ? '<div class="offl">выходной</div>' : absOn(ds).length ? `<div class="nrl">Н/Р: ${absOn(ds).map(esc).join(', ')}</div>` : ''}</td>
           ${cols.map((c) => `<td class="jcell" data-d="${ds}" data-bay="${esc(c === 'Без поста' ? '' : c)}">${rows.filter((r) => inCol(r.bay, c) && r.scheduled_at.slice(0, 10) <= ds && (r.end_date || r.scheduled_at.slice(0, 10)) >= ds).map((r) => orderCard(r, ds)).join('')}${notes.filter((n) => n.date === ds && (c === '' ? !n.bay : n.bay === c)).map(noteCard).join('')}</td>`).join('')}</tr>`; }).join('')}
         </tbody></table></div>`;
       const reloadJ = () => render();
@@ -1268,7 +1297,7 @@ route(/^\/salary$/, async (page, query) => {
 // ================= Сотрудники =================
 route(/^\/users$/, async (page) => {
   const rows = await GET('/api/users');
-  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1><div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
+  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('list')}<div class="sp"></div><button class="primary" id="add">+ Сотрудник</button></div>
     <div class="card" style="padding:4px 6px"><table class="tbl resp"><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Телефон</th><th class="r">% работ</th><th class="r">% товаров</th><th>MAX</th><th>Telegram</th></tr></thead><tbody>
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
@@ -1280,7 +1309,8 @@ route(/^\/users$/, async (page) => {
     <div class="field"><label>Логин *</label><input name="login" required value="${esc(u.login || '')}" autocapitalize="off" pattern="[a-zA-Z0-9._\-]{3,32}" title="3–32 символа: латинские буквы, цифры, точка, дефис, подчёркивание"></div></div>
     <div class="row"><div class="field"><label>Роль</label><select name="role">${opts(Object.entries(ROLES), u.role)}</select></div><div class="field"><label>Телефон</label><input name="phone" value="${esc(u.phone || '')}"></div></div>
     <div class="row"><div class="field"><label>% от работ</label><input name="salary_percent" type="number" step="any" min="0" max="100" value="${u.salary_percent || 0}"></div>
-    <div class="field"><label>% от товаров</label><input name="goods_percent" type="number" step="any" min="0" max="100" value="${u.goods_percent || 0}"></div></div>
+    <div class="field"><label>% от товаров</label><input name="goods_percent" type="number" step="any" min="0" max="100" value="${u.goods_percent || 0}"></div>
+    <div class="field" id="dhF"><label>Часов в рабочий день</label><input name="default_hours" type="number" step="0.5" min="0" max="24" value="${u.default_hours ?? ''}" placeholder="8"></div></div>
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
     <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
     ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>
@@ -1309,9 +1339,65 @@ route(/^\/users$/, async (page) => {
       if (del) del.onclick = async () => {
         if (!(await confirmBox(`Удалить сотрудника «${u.name}»? Он больше не сможет войти. Если у него есть заказы или начисления, его имя останется в старых документах.`, 'Удалить'))) return;
         try { const r = await DEL('/api/users/' + u.id); close(); S.staff = await GET('/api/staff'); toast(r.mode === 'archived' ? 'Сотрудник удалён (история заказов сохранена)' : 'Сотрудник удалён'); navigate(); } catch (e) { toast(e.message, true); }
-      }; f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
+      };
+      const dh = () => $('#dhF', f).classList.toggle('hidden', f.role.value !== 'senior'); dh(); f.role.addEventListener('change', dh);
+      f.role.addEventListener('change', () => { if (f.role.value === 'senior' || f.role.value === 'admin' || f.role.value === 'manager') f.salary_percent.value = 0; else if (f.role.value === 'master' && !+f.salary_percent.value) f.salary_percent.value = 50; }); } });
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
+});
+
+const staffTabs = (cur) => isAdmin() ? `<div class="chips"><a class="chip ${cur === 'list' ? 'on' : ''}" href="#/users">Список</a><a class="chip ${cur === 'sched' ? 'on' : ''}" href="#/users/schedule">График работы</a></div>` : '';
+const SCH_CODE = { off: 'В', vac: 'О', sick: 'Б', abs: 'Н/Р' };
+route(/^\/users\/schedule$/, async (page, query) => {
+  const month = query.m || today().slice(0, 7);
+  const d = await GET('/api/schedule' + qs({ month }));
+  const E = {}; for (const e of d.entries) E[e.user_id + '|' + e.date] = e;
+  const days = []; for (let x = d.from; x <= d.to; ) { days.push(x); const t = new Date(x + 'T12:00'); t.setDate(t.getDate() + 1); x = ymd(t); }
+  const hrs = (u) => u.role === 'senior';
+  const info = (u, ds) => { const e = E[u.id + '|' + ds]; const off = isDayOff(ds);
+    if (e) return { st: e.status, h: e.status === 'work' ? (e.hours ?? u.default_hours ?? 0) : 0, ex: true, note: e.note, by: e.updated_by_name };
+    return { st: off ? 'off' : 'work', h: off ? 0 : (u.default_hours || 0), ex: false, dflt: true }; };
+  const shift = (n) => { const t = new Date(month + '-15T12:00'); t.setMonth(t.getMonth() + n); return ymd(t).slice(0, 7); };
+  const mName = (m) => `${MONTHS_NOM[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
+  const cell = (u, ds) => { const i = info(u, ds); let cls = 'c', txt = '';
+    if (i.st === 'work') { cls += ' w' + (hrs(u) && i.ex && E[u.id + '|' + ds].hours != null ? ' ex' : ''); txt = hrs(u) ? num(i.h) : '•'; }
+    else if (i.dflt) { cls += ' dflt-off'; txt = ''; }
+    else { cls += ' st-' + i.st; txt = SCH_CODE[i.st]; }
+    if (ds === today()) cls += ' today'; if (i.note) cls += ' hasnote';
+    const tip = [dmy(ds), d.statuses[i.st] + (hrs(u) && i.st === 'work' ? ` · ${num(i.h)} ч` : ''), i.note, i.by ? 'изменил: ' + i.by : ''].filter(Boolean).join('\n');
+    return `<td class="${cls}" data-u="${u.id}" data-d="${ds}" title="${esc(tip)}">${txt}</td>`; };
+  const tot = (u) => { let dn = 0, h = 0, ab = 0; for (const ds of days) { const i = info(u, ds); if (i.st === 'work') { dn++; h += i.h; } else if (!i.dflt && i.st !== 'off') ab++; } return { dn, h, ab }; };
+  page.innerHTML = `<div class="topbar"><h1>Сотрудники</h1>${staffTabs('sched')}<div class="sp"></div>
+    <div class="inline"><button id="pm">‹</button><b style="min-width:130px;text-align:center">${mName(month)}</b><button id="nm">›</button><button id="cm">Текущий</button></div></div>
+    <div class="legend" style="margin:-4px 0 10px"><span><i style="background:rgba(120,130,150,.5)"></i>В — выходной</span><span><i style="background:rgba(80,140,230,.6)"></i>О — отпуск</span><span><i style="background:rgba(230,160,40,.6)"></i>Б — больничный</span><span><i style="background:rgba(229,72,77,.7)"></i>Н/Р — отсутствует</span><span><i style="background:var(--accent)"></i>часы изменены вручную</span></div>
+    <div class="card" style="padding:0;overflow:auto;max-height:calc(100vh - 210px)"><table class="sched"><thead><tr><th class="nm">Сотрудник</th>
+      ${days.map((ds) => { const x = new Date(ds + 'T12:00'); return `<th class="${isDayOff(ds) ? 'we' : ''}">${x.getDate()}<br>${DOW[x.getDay()]}</th>`; }).join('')}
+      <th class="tot">Дней</th><th class="tot">Часов</th></tr></thead><tbody>
+      ${d.users.map((u) => { const t = tot(u); return `<tr><td class="nm"><b>${esc(u.name)}</b><small>${ROLES[u.role]}${hrs(u) ? ` · ${num(u.default_hours || 0)} ч/день` : ''}${t.ab ? ` · отсутствий: ${t.ab}` : ''}</small></td>${days.map((ds) => cell(u, ds)).join('')}
+        <td class="tot">${t.dn}</td><td class="tot" style="color:var(--accent)">${hrs(u) ? num(t.h) : '—'}</td></tr>`; }).join('') || `<tr><td class="nm" colspan="${days.length + 3}">Нет сотрудников</td></tr>`}
+    </tbody></table></div>
+    <div class="small muted">Нажмите на ячейку, чтобы отметить выходной, отпуск, больничный или отсутствие, либо поправить часы. Можно сразу указать период «по дату». По умолчанию сотрудники работают во все рабочие дни студии (выходные задаются в Настройках). Часы считаются для руководителей-мастеров: норма в день задаётся в карточке сотрудника. Если мастер не работает в какой-то день, при записи на эту дату он отмечается в списке как «(Н/Р)».</div>`;
+  $('#pm', page).onclick = () => go('/users/schedule' + qs({ m: shift(-1) }));
+  $('#nm', page).onclick = () => go('/users/schedule' + qs({ m: shift(1) }));
+  $('#cm', page).onclick = () => go('/users/schedule');
+  $$('td.c', page).forEach((td) => (td.onclick = () => {
+    const u = d.users.find((x) => x.id === +td.dataset.u), ds = td.dataset.d, i = info(u, ds), e = E[u.id + '|' + ds];
+    const m = modal(`${u.name} · ${dmy(ds)}`, `
+      <div class="field"><label>Статус</label><div class="chips" id="stc">${Object.entries(d.statuses).map(([k, t]) => `<label class="chip ${i.st === k ? 'on' : ''}"><input type="radio" name="status" value="${k}" hidden ${i.st === k ? 'checked' : ''}>${t}</label>`).join('')}</div></div>
+      <div class="row">${hrs(u) ? `<div class="field" id="hF"><label>Часов (норма ${num(u.default_hours || 0)})</label><input name="hours" type="number" step="0.5" min="0" max="24" value="${e && e.hours != null ? e.hours : ''}" placeholder="${num(u.default_hours || 0)}"></div>` : ''}
+      <div class="field"><label>По дату (включительно)</label><input type="date" name="to" min="${ds}" placeholder="только этот день"></div></div>
+      <div class="field"><label>Комментарий</label><input name="note" value="${esc(e?.note || '')}" placeholder="например: отпросился к врачу"></div>
+      ${e ? `<div class="small muted">Изменено вручную${e.updated_by_name ? ': ' + esc(e.updated_by_name) : ''}</div>` : ''}`,
+    { footer: `${e ? '<button type="button" class="ghost" data-rst style="margin-right:auto">↺ Как по графику</button>' : ''}<button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>`,
+      onOpen: (f, close) => {
+        const sync = () => { $$('#stc .chip', f).forEach((c) => c.classList.toggle('on', $('input', c).checked)); const hf = $('#hF', f); if (hf) hf.classList.toggle('hidden', f.querySelector('input[name=status]:checked')?.value !== 'work'); };
+        $('#stc', f).onchange = sync; sync();
+        const r = $('[data-rst]', f); if (r) r.onclick = async () => { await PUT('/api/schedule', { user_id: u.id, date: ds, to: f.to.value, reset: 1 }); ABS = {}; close(); navigate(); };
+      },
+      onSubmit: async (v) => { const st = v.status || 'work';
+        await PUT('/api/schedule', { user_id: u.id, date: ds, to: v.to, status: st, hours: st === 'work' ? v.hours : '', note: v.note });
+        ABS = {}; toast('Сохранено'); navigate(); } });
+  }));
 });
 
 // ================= Настройки =================
