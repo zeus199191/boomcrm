@@ -371,7 +371,7 @@ select[data-f=master_id] { min-width: 170px; }
 .phnav.l { left: 6px; } .phnav.r { right: 6px; }
 
 /* ===== Режим приложения (iOS / Android, «На экран Домой») ===== */
-.logo img.mark { width: 34px; height: 34px; border-radius: 9px; display: block; }
+.logo img.mark { width: 40px; height: 40px; object-fit: contain; display: block; background: none; box-shadow: none; border-radius: 0; }
 .tabbar { display: none; }
 @media (max-width: 860px) {
   .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: rgba(22,25,32,.92); -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px);

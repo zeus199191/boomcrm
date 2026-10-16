@@ -88,9 +88,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'GET' && staticHandler(req, res, pathname)) return;
-    // SPA: всё остальное отдаём index.html
-    if (req.method === 'GET' && !path.extname(pathname)) return staticHandler(req, res, '/');
+    // Главная — сайт ателье (можно выключить в Настройках), CRM — /crm
+    if (req.method === 'GET' && pathname === '/') {
+      if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
+      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    }
+    if (req.method === 'GET' && (pathname === '/crm' || pathname.startsWith('/crm/'))) return staticHandler(req, res, '/index.html');
+    if (req.method === 'GET' && pathname !== '/index.html' && staticHandler(req, res, pathname)) return;
+    if (req.method === 'GET' && (pathname === '/index.html' || !path.extname(pathname))) { res.writeHead(302, { Location: '/crm' }); return res.end(); }
     throw new HttpError(404, 'Не найдено');
   } catch (e) {
     let status = e.status || 500;

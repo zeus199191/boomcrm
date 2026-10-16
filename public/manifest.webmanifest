@@ -1,9 +1,9 @@
 {
-  "id": "/",
+  "id": "/crm",
   "name": "Бумсистем CRM",
   "short_name": "Бумсистем",
   "description": "CRM студии автозвука и тюнинга",
-  "start_url": "/",
+  "start_url": "/crm",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
