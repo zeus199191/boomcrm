@@ -31,7 +31,7 @@ const ROLES = { admin: 'Администратор', senior: 'Руководит
 const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
 const SOURCES = ['Рекомендация', 'Авито', 'Яндекс Карты', '2ГИС', 'ВКонтакте', 'Telegram', 'Instagram', 'Сайт', 'Проезжал мимо', 'Постоянный клиент'];
-const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Прочее'];
+const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Эквайринг', 'Прочее'];
 const INCOME_CATS = ['Оплата заказа', 'Продажа без заказа', 'Внесение в кассу', 'Прочее'];
 
 const S = { me: null, staff: [], services: null };
@@ -529,7 +529,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
       <div style="margin-top:10px;gap:8px;justify-content:flex-end"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
     </div>
-    ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}${p.acquiring ? `<div class="small">эквайринг −${rub(p.acquiring)} (наш расход)</div>` : ''}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
   </div><div>
     <div class="card"><h2>Клиент и автомобиль</h2>${o.contractor_name ? `<div class="field"><span class="badge">🤝 ${esc(o.contractor_name)}</span></div>` : ''}
@@ -1258,7 +1258,7 @@ route(/^\/finance$/, async (page, query) => {
   $$('[data-delm]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию? Обналичивание удаляется целиком (все источники).', 'Удалить')) { await DEL('/api/money/moves/' + b.dataset.delm); navigate(); } }));
   $('#addIn', page).onclick = () => payModal('in');
   $('#addOut', page).onclick = () => payModal('out');
-  $$('[data-delp]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delp); navigate(); } }));
+  $$('[data-delp]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию из кассы? Если это оплата картой, вместе с ней удалится и её эквайринг.', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delp); navigate(); } }));
 });
 
 // ================= Зарплата =================
@@ -1455,6 +1455,7 @@ route(/^\/settings$/, async (page) => {
     <div class="card"><h2>Запись</h2>
       <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
       <div class="field"><label>Наценка при безналичной оплате, %</label><input type="number" name="cashless_markup" min="0" max="50" step="any" value="${esc(s.cashless_markup)}"></div>
+      <div class="field"><label>Эквайринг (комиссия банка с оплат картой), %</label><input type="number" name="acquiring_percent" min="0" max="10" step="any" value="${esc(s.acquiring_percent ?? '2')}"><div class="small muted">Не добавляется к сумме клиента — автоматически проводится нашим расходом «Эквайринг» с кассы «Карта».</div></div>
       <div class="field"><label>Выходные дни (запись возможна только как исключение)</label><div class="chips" id="doff">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label class="chip ${(s.days_off || '0').split(',').includes(String(d)) ? 'on' : ''}"><input type="checkbox" value="${d}" hidden ${(s.days_off || '0').split(',').includes(String(d)) ? 'checked' : ''}>${DOW[d]}</label>`).join('')}</div><input type="hidden" name="days_off" value="${esc(s.days_off ?? '0')}"></div>
       <div class="row"><div class="field"><label>Начало дня</label><input type="time" name="work_start" value="${esc(s.work_start)}"></div><div class="field"><label>Конец дня</label><input type="time" name="work_end" value="${esc(s.work_end)}"></div></div>
       <h2 style="margin-top:16px">Тексты документов</h2>
