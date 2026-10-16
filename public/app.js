@@ -223,7 +223,7 @@ function renderShell() {
   const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice()) || (n[3] === 'admin' && isAdmin()));
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
-    <div class="logo"><img class="mark" src="/brand-shield.png" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
+    <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
     <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : p === '/warranty' ? '<span class="badge red hidden" id="wBadge" title="Гарантия: 30+ дней"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
       <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
@@ -283,7 +283,7 @@ function changeMyPassword() {
 
 function renderLogin() {
   $('#root').innerHTML = `<div class="login"><form class="box card" id="lf">
-    <div class="logo"><img class="mark" src="/brand-shield.png" alt=""><div><b>Бумсистем</b><span>CRM автозвук и тюнинг</span></div></div>
+    <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>Бумсистем</b><span>CRM автозвук и тюнинг</span></div></div>
     <div class="field"><label>Логин</label><input name="login" autocomplete="username" required></div>
     <div class="field"><label>Пароль</label><input name="password" type="password" autocomplete="current-password" required></div>
     <button class="primary" style="width:100%;justify-content:center;padding:10px">Войти</button>
