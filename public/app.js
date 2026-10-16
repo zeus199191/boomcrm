@@ -26,7 +26,9 @@ const carStr = (o) => [o.brand, o.model].filter(Boolean).join(' ') + (o.plate ? 
 const DOW = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const MONTHS_NOM = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-const METHODS = { cash: 'Наличные', card: 'Карта', transfer: 'Счёт' };
+const METHODS = { cash: 'Наличные', card: 'Перевод на карту', terminal: 'Терминал', transfer: 'Расчётный счёт' }; // подписи в журналах
+const WALLET = { cash: 'Наличные', card: 'Карта', transfer: 'Расчётный счёт' };                                  // кассы (остатки)
+const PAY_IN = { cash: 'Наличные', card: 'Перевод на карту (без эквайринга)', terminal: 'Терминал — банковская карта (эквайринг)' }; // оплата от клиента
 const ROLES = { admin: 'Администратор', senior: 'Руководитель-мастер', manager: 'Менеджер', master: 'Мастер' };
 const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
@@ -695,9 +697,13 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   });
   const payModal = (refund) => modal(refund ? 'Возврат клиенту' : 'Принять оплату', `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required value="${refund ? '' : Math.max(t.due, 0)}"></div>
-    <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'cash')}</select></div></div>
+    <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(refund ? { ...PAY_IN, transfer: 'С расчётного счёта' } : PAY_IN), 'cash')}</select></div></div>
+    ${refund ? '' : `<div class="small muted" id="pmHint" style="margin:-4px 0 8px"></div>`}
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
-  { submit: refund ? 'Оформить возврат' : 'Принять', onSubmit: async (d) => { await POST(`/api/orders/${o.id}/pay`, { ...d, refund }); toast(refund ? 'Возврат проведён' : 'Оплата принята'); reload(); } });
+  { onOpen: (f) => { const h = $('#pmHint', f); if (!h) return; const u = () => { const v = f.method.value, a = +f.amount.value || 0, pct = S.me.acquiring_percent ?? 2;
+      h.textContent = v === 'terminal' ? `Зачислится на расчётный счёт. Эквайринг ${pct}% (${rub(a * pct / 100)}) — наш расход, клиент платит ${rub(a)}.` : v === 'card' ? 'Зачислится в кассу «Карта», без эквайринга.' : 'Зачислится в кассу «Наличные».'; };
+      f.method.onchange = u; f.amount.oninput = u; u(); },
+    submit: refund ? 'Оформить возврат' : 'Принять', onSubmit: async (d) => { await POST(`/api/orders/${o.id}/pay`, { ...d, refund }); toast(refund ? 'Возврат проведён' : 'Оплата принята'); reload(); } });
   $('#pay', page).onclick = () => payModal(false);
   $('#refund', page).onclick = () => payModal(true);
   const dl = $('#delOrder', page);
@@ -1033,7 +1039,7 @@ route(/^\/stock$/, async (page) => {
       <div class="row"><div class="field"><label>Поставщик</label><select name="contractor_id">${opts(contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other').map((c) => [c.id, c.name]), '', '— не выбран —')}</select></div>
       <div class="field"><label>Накладная / комментарий</label><input name="note" placeholder="накл. 123 от 15.10"></div></div>
       <div class="row"><div class="field"><label>Оплата</label><select name="pay"><option value="now">Оплачено сейчас (расход в кассе)</option><option value="debt">В долг поставщику</option><option value="">Не учитывать оплату</option></select></div>
-      <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'transfer')}</select></div></div>`,
+      <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div></div>`,
     { wide: true, submit: 'Оприходовать', onSubmit: async (d) => {
       const r = await POST('/api/stock/receipt', { items: lines, note: d.note, pay: d.pay, method: d.method, contractor_id: d.contractor_id || null });
       toast('Оприходовано на ' + rub(r.sum)); load();
@@ -1198,7 +1204,7 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
   const T = { we_owe: 'Получили товар / услугу (мы должны)', they_owe: 'Начислить контрагенту (он должен нам)', pay_out: 'Оплата контрагенту (расход из кассы)', pay_in: 'Оплата от контрагента (приход в кассу)' };
   $$('[data-op]', page).forEach((b) => (b.onclick = () => { const t = b.dataset.op; modal(T[t], `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
-    ${t.startsWith('pay') ? `<div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'transfer')}</select></div>` : ''}</div>
+    ${t.startsWith('pay') ? `<div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div>` : ''}</div>
     <div class="field"><label>Основание / комментарий</label><input name="note" placeholder="${t === 'we_owe' ? 'Накладная №…, печать стоек, ламинация карбона…' : 'Счёт №…'}"></div>`,
   { onSubmit: async (d) => { await POST(`/api/contractors/${c.id}/op`, { ...d, type: t }); CACHE_CONTR = null; toast('Проведено'); navigate(); } }); }));
   $$('[data-o]', page).forEach((e) => (e.onclick = () => go('/orders/' + e.dataset.o)));
@@ -1421,7 +1427,7 @@ route(/^\/finance$/, async (page, query) => {
   page.innerHTML = `<div class="topbar"><h1>Финансы</h1><div class="sp"></div>${periodBar(page, from, to)}</div>
   <div class="card"><div class="inline" style="margin-bottom:10px;flex-wrap:wrap"><h2 style="margin:0;flex:1">Деньги в кассах</h2>
       <button class="sm" id="cashOut">💵 Обналичить</button><button class="sm" id="moveMoney">⇄ Перемещение</button>${isAdmin() ? '<button class="sm" id="reconcile">✓ Сверка остатков</button>' : ''}</div>
-    <div class="grid g4" style="margin-bottom:12px">${Object.entries(METHODS).map(([k, t]) => `<div class="kpi"><div class="l">${t} — сейчас</div><div class="v ${mb.now[k] < 0 ? 'bad' : ''}">${rub(mb.now[k])}</div></div>`).join('')}
+    <div class="grid g4" style="margin-bottom:12px">${Object.entries(WALLET).map(([k, t]) => `<div class="kpi"><div class="l">${t} — сейчас</div><div class="v ${mb.now[k] < 0 ? 'bad' : ''}">${rub(mb.now[k])}</div></div>`).join('')}
       <div class="kpi"><div class="l">Всего денег</div><div class="v acc">${rub(Object.values(mb.now).reduce((a, b) => a + b, 0))}</div></div></div>
     <div class="tblwrap"><table class="tbl resp"><thead><tr><th>За период</th><th class="r">На начало</th><th class="r">Приход</th><th class="r">Расход</th><th class="r">Перемещения</th><th class="r">Корректировки</th><th class="r">На конец</th></tr></thead><tbody>
     ${mb.period.map((w) => `<tr><td data-l="Касса"><b>${w.name}</b></td><td data-l="На начало" class="r mono">${num(w.open)}</td><td data-l="Приход" class="r mono" style="color:var(--ok)">${w.inc ? '+' + num(w.inc) : '—'}</td><td data-l="Расход" class="r mono" style="color:var(--bad)">${w.exp ? '−' + num(w.exp) : '—'}</td>
@@ -1432,7 +1438,7 @@ route(/^\/finance$/, async (page, query) => {
       ${mb.moves.map((m) => `<tr><td data-l="Дата" class="nowrap">${dt(m.created_at)}</td><td data-l="Операция">${m.kind === 'adjust' ? `Корректировка · ${METHODS[m.to_method]}` : `${METHODS[m.from_method]} → ${METHODS[m.to_method]}${m.to_method === 'cash' ? ' (обналичивание)' : ''}`} <span class="muted">${esc(m.note || '')}${m.user ? ' · ' + esc(m.user) : ''}</span></td>
       <td data-l="Сумма" class="r mono">${m.kind === 'adjust' ? (m.amount > 0 ? '+' : '−') + num(Math.abs(m.amount)) : num(m.amount)}${m.fee ? `<div class="small muted">комиссия ${num(m.fee)}</div>` : ''}</td>${isAdmin() ? `<td><button class="ghost sm danger" data-delm="${m.id}">✕</button></td>` : ''}</tr>`).join('')}
     </tbody></table></details>` : ''}
-    <div class="small muted" style="margin-top:8px">Остаток = все приходы − расходы по этому способу оплаты ± перемещения ± корректировки. «Карта» и «Счёт» — оплаты, проведённые этим способом. Для старта сделайте «Сверку остатков» и внесите фактические суммы.</div></div>
+    <div class="small muted" style="margin-top:8px">Остаток = приходы − расходы ± перемещения ± корректировки. Наличные — оплата наличными; Карта — переводы на карту (без эквайринга); Расчётный счёт — оплаты через терминал (эквайринг списывается отсюда же) и безналичные платежи. Для старта сделайте «Сверку остатков» и внесите фактические суммы.</div></div>
   <div class="grid g4" style="margin-bottom:14px">
     <div class="kpi"><div class="l">Поступления</div><div class="v ok">${rub(inc)}</div></div>
     <div class="kpi"><div class="l">Расходы</div><div class="v bad">${rub(exp)}</div></div>
@@ -1470,13 +1476,13 @@ route(/^\/finance$/, async (page, query) => {
   const payModal = (dir) => modal(dir === 'in' ? 'Приход в кассу' : 'Расход', `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" step="any" min="0.01" required></div>
     <div class="field"><label>Статья</label><select name="category" id="cat">${opts(dir === 'in' ? INCOME_CATS : EXPENSE_CATS.filter((c) => isAdmin() || c !== 'Зарплата'))}</select></div></div>
-    <div class="row"><div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'cash')}</select></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
+    <div class="row"><div class="field"><label>Способ</label><select name="method">${opts(Object.entries(dir === 'in' ? { ...PAY_IN, transfer: 'На расчётный счёт (безнал)' } : WALLET), 'cash')}</select></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
     <div class="field"><label>Контрагент</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name]), '', '—')}</select></div>
     <div class="field hidden" id="empF"><label>Сотрудник</label><select name="employee_id">${opts(S.staff.map((u) => [u.id, u.name]), '', '—')}</select></div></div>
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
   { onSubmit: async (d) => { await POST('/api/payments', { ...d, direction: dir }); toast('Проведено'); navigate(); },
     onOpen: (f) => { const c = $('#cat', f); const t = () => $('#empF', f).classList.toggle('hidden', c.value !== 'Зарплата'); c.onchange = t; t(); } });
-  const mopts = (sel, skip) => opts(Object.entries(METHODS).filter(([k]) => k !== skip), sel);
+  const mopts = (sel, skip) => opts(Object.entries(WALLET).filter(([k]) => k !== skip), sel);
   $('#cashOut', page).onclick = () => modal('Обналичивание', `
     <div class="small muted" style="margin-bottom:8px">Укажите, сколько сняли с каждого источника. «Получено» — сумма, пришедшая в наличные; комиссия банка списывается с источника дополнительно.</div>
     ${[['transfer', 'Со счёта'], ['card', 'С карты']].map(([k, t]) => `<div class="row"><div class="field"><label>${t}: получено, ₽ <span class="muted">(сейчас ${rub(mb.now[k])})</span></label><input name="a_${k}" type="number" step="any" min="0"></div>
@@ -1496,10 +1502,10 @@ route(/^\/finance$/, async (page, query) => {
       await POST('/api/money/transfer', { to_method: d.to, date: d.date, note: d.note, parts: [{ from_method: d.from, amount: d.amount, fee: d.fee }] }); toast('Перемещение проведено'); navigate(); } });
   if ($('#reconcile', page)) $('#reconcile', page).onclick = () => modal('Сверка остатков', `
     <div class="small muted" style="margin-bottom:8px">Пересчитайте деньги и впишите фактические остатки. Если факт отличается от CRM, будет проведена корректировка на разницу. Пустое поле — не менять.</div>
-    ${Object.entries(METHODS).map(([k, t]) => `<div class="row"><div class="field"><label>${t}: по CRM</label><input value="${num(mb.now[k])}" disabled></div>
+    ${Object.entries(WALLET).map(([k, t]) => `<div class="row"><div class="field"><label>${t}: по CRM</label><input value="${num(mb.now[k])}" disabled></div>
       <div class="field"><label>Фактически, ₽</label><input name="${k}" type="number" step="any" data-crm="${mb.now[k]}"></div><div class="field"><label>Разница</label><input disabled id="df_${k}"></div></div>`).join('')}
     <div class="field"><label>Комментарий</label><input name="note" placeholder="например: ввод начальных остатков"></div>`,
-  { onOpen: (f) => { f.oninput = () => Object.keys(METHODS).forEach((k) => { const i = f.elements[k]; $('#df_' + k, f).value = i.value === '' ? '' : ((+i.value - +i.dataset.crm) > 0 ? '+' : '') + num(+i.value - +i.dataset.crm); }); },
+  { onOpen: (f) => { f.oninput = () => Object.keys(WALLET).forEach((k) => { const i = f.elements[k]; $('#df_' + k, f).value = i.value === '' ? '' : ((+i.value - +i.dataset.crm) > 0 ? '+' : '') + num(+i.value - +i.dataset.crm); }); },
     onSubmit: async (d) => { const r = await POST('/api/money/reconcile', d); toast(r.made.length ? 'Корректировки проведены: ' + r.made.length : 'Расхождений нет'); navigate(); } });
   $$('[data-delm]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию? Обналичивание удаляется целиком (все источники).', 'Удалить')) { await DEL('/api/money/moves/' + b.dataset.delm); navigate(); } }));
   $('#addIn', page).onclick = () => payModal('in');
@@ -1537,7 +1543,7 @@ route(/^\/salary$/, async (page, query) => {
   { onSubmit: async (d) => { await POST('/api/salary/adjustments', { user_id: b.dataset.adj, amount: Math.abs(+d.amount) * +d.kind, date: d.date, note: d.note }); toast('Сохранено'); navigate(); } })));
   $$('[data-deladj]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить премию / удержание?', 'Удалить')) { await DEL('/api/salary/adjustments/' + b.dataset.deladj); navigate(); } }));
   $$('[data-pay]', page).forEach((b) => (b.onclick = () => modal('Выплата зарплаты', `
-    <div class="row"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" step="any" required value="${b.dataset.due}"></div><div class="field"><label>Способ</label><select name="method">${opts(Object.entries(METHODS), 'cash')}</select></div></div>
+    <div class="row"><div class="field"><label>Сумма, ₽</label><input name="amount" type="number" step="any" required value="${b.dataset.due}"></div><div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'cash')}</select></div></div>
     <div class="field"><label>Комментарий</label><input name="note" value="Зарплата ${dmy(from)}–${dmy(to)}"></div>`,
   { submit: 'Провести выплату', onSubmit: async (d) => { await POST('/api/payments', { ...d, direction: 'out', category: 'Зарплата', employee_id: b.dataset.pay, date: to <= today() ? to : today() }); toast('Выплата проведена'); navigate(); } })));
 });
@@ -1712,9 +1718,9 @@ route(/^\/users\/seniors$/, async (page, query) => {
     ${d.rows.map((x) => `<div class="li"><div class="grow"><b>${esc(x.name)}</b> <span class="muted small">${num(x.hours)} ч × ${rub(d.rate)} − ${rub(x.share)}</span></div><span class="mono">${rub(x.pay)}</span></div>`).join('')}
     <div class="totals" style="width:100%;margin:8px 0"><div class="big"><span>Всего</span><span class="mono">${rub(d.pay_total)}</span></div></div>
     ${paid.length ? `<div class="offwarn">⚠️ За этот месяц уже была выплата ${rub(paid[0].total)} (${dt(paid[0].created_at)}). Будет ещё одна.</div>` : ''}
-    <div class="field"><label>Из какой кассы</label><select name="method">${Object.entries(METHODS).map(([k, t]) => `<option value="${k}" ${k === 'cash' ? 'selected' : ''}>${t} — сейчас ${rub(d.balances[k])}</option>`).join('')}</select></div>`,
+    <div class="field"><label>Из какой кассы</label><select name="method">${Object.entries(WALLET).map(([k, t]) => `<option value="${k}" ${k === 'cash' ? 'selected' : ''}>${t} — сейчас ${rub(d.balances[k])}</option>`).join('')}</select></div>`,
   { submit: 'Выплатить', onSubmit: async (v) => {
-      if (d.balances[v.method] < d.pay_total && !(await confirmBox(`В кассе «${METHODS[v.method]}» сейчас ${rub(d.balances[v.method])} — меньше суммы выплаты. Всё равно провести?`, 'Провести'))) return false;
+      if (d.balances[v.method] < d.pay_total && !(await confirmBox(`В кассе «${WALLET[v.method]}» сейчас ${rub(d.balances[v.method])} — меньше суммы выплаты. Всё равно провести?`, 'Провести'))) return false;
       await POST('/api/mgmt/payout', { month, method: v.method, expect_total: d.pay_total }); toast('Выплата проведена — операция в «Финансах»'); navigate(); } });
 });
 function expRow(e) {
@@ -1775,7 +1781,7 @@ route(/^\/settings$/, async (page) => {
     <div class="card"><h2>Запись</h2>
       <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
       <div class="field"><label>Наценка при безналичной оплате, %</label><input type="number" name="cashless_markup" min="0" max="50" step="any" value="${esc(s.cashless_markup)}"></div>
-      <div class="field"><label>Эквайринг (комиссия банка с оплат картой), %</label><input type="number" name="acquiring_percent" min="0" max="10" step="any" value="${esc(s.acquiring_percent ?? '2')}"><div class="small muted">Не добавляется к сумме клиента — автоматически проводится нашим расходом «Эквайринг» с кассы «Карта».</div></div>
+      <div class="field"><label>Эквайринг (комиссия банка с оплат через терминал), %</label><input type="number" name="acquiring_percent" min="0" max="10" step="any" value="${esc(s.acquiring_percent ?? '2')}"><div class="small muted">Не добавляется к сумме клиента — автоматически проводится нашим расходом «Эквайринг» с расчётного счёта. Переводы на карту — без эквайринга.</div></div>
       <div class="field"><label>Выходные дни (запись возможна только как исключение)</label><div class="chips" id="doff">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label class="chip ${(s.days_off || '0').split(',').includes(String(d)) ? 'on' : ''}"><input type="checkbox" value="${d}" hidden ${(s.days_off || '0').split(',').includes(String(d)) ? 'checked' : ''}>${DOW[d]}</label>`).join('')}</div><input type="hidden" name="days_off" value="${esc(s.days_off ?? '0')}"></div>
       <div class="row"><div class="field"><label>Начало дня</label><input type="time" name="work_start" value="${esc(s.work_start)}"></div><div class="field"><label>Конец дня</label><input type="time" name="work_end" value="${esc(s.work_end)}"></div></div>
       <h2 style="margin-top:16px">Тексты документов</h2>
