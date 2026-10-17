@@ -995,7 +995,7 @@ route(/^\/stock$/, async (page) => {
   page.innerHTML = `<div class="topbar"><h1>Склад</h1><span class="muted" id="sum"></span><div class="sp"></div>
     <input class="search" id="q" placeholder="Название, артикул, бренд">
     <button id="moves">Движения</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
-    <div class="inline" style="margin-bottom:12px"><div class="chips"><button class="chip on" data-sc="stock">На складе</button><button class="chip" data-sc="all">Весь каталог</button><button class="chip" id="low">Заканчиваются</button></div>
+    <div class="inline" style="margin-bottom:12px"><div class="chips"><button class="chip on" data-sc="stock">На складе</button><button class="chip" data-sc="all">Весь каталог</button><button class="chip" data-sc="site" title="Товары, которые показываются на сайте ателье">На сайте</button><button class="chip" id="low">Заканчиваются</button></div>
     <select id="cat" style="width:auto;max-width:280px"><option value="">Все категории</option></select></div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
   $$('[data-sc]', page).forEach((b) => (b.onclick = () => { scope = b.dataset.sc; $$('[data-sc]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
@@ -1024,16 +1024,16 @@ route(/^\/stock$/, async (page) => {
     const allRows = await GET('/api/products' + qs({ q: $('#q', page).value, low: low ? 1 : '', all: 1 }));
     const cats = [...new Set(allRows.map((p) => p.category).filter(Boolean))].sort();
     $('#cat', page).innerHTML = '<option value="">Все категории</option>' + cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${esc(c)}</option>`).join('');
-    rows = allRows.filter((p) => (!cat || p.category === cat) && (scope === 'all' || low || $('#q', page).value || p.stock !== 0 || p.min_stock > 0));
+    rows = allRows.filter((p) => (!cat || p.category === cat) && (scope === 'site' ? p.site : scope === 'all' || low || $('#q', page).value || p.stock !== 0 || p.min_stock > 0));
     const shown = rows.slice(0, 500);
     const val = allRows.filter((p) => p.active && p.stock > 0).reduce((s, p) => s + p.stock * p.cost, 0);
     $('#sum', page).textContent = `${rows.length} поз.${rows.length > 500 ? ' (показаны первые 500 — уточните поиск)' : ''} · на складе на ${rub(val)} по закупке`;
     $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Товар</th><th>Артикул</th><th>Категория</th><th class="r">Закупка</th><th class="r">Цена</th><th class="r">Наценка</th><th class="r">Остаток</th><th></th></tr></thead><tbody>
-      ${shown.map((p) => `<tr class="click" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}"><td data-l="Товар"><b>${esc(p.name)}</b>${p.brand ? `<div class="small muted">${esc(p.brand)}</div>` : ''}</td><td data-l="Артикул" class="muted">${esc(p.sku || '')}</td><td data-l="Категория">${esc(p.category || '')}</td>
+      ${shown.map((p) => `<tr class="click" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}"><td data-l="Товар"><b>${esc(p.name)}</b>${p.site ? ' <span class="badge ok" title="Показывается на сайте">на сайте</span>' : ''}${p.brand ? `<div class="small muted">${esc(p.brand)}</div>` : ''}</td><td data-l="Артикул" class="muted">${esc(p.sku || '')}</td><td data-l="Категория">${esc(p.category || '')}</td>
       <td data-l="Закупка" class="r mono">${num(p.cost)}</td><td data-l="Цена" class="r mono">${num(p.price)}</td><td data-l="Наценка" class="r muted">${p.cost ? Math.round((p.price / p.cost - 1) * 100) + '%' : '—'}</td>
       <td data-l="Остаток" class="r"><span class="badge ${p.stock <= 0 ? 'red' : p.min_stock && p.stock <= p.min_stock ? 'warn' : 'ok'}">${num(p.stock)} ${esc(p.unit)}</span></td>
       <td><button class="sm" data-move="${p.id}" title="Корректировка остатка">±</button></td></tr>`).join('')}
-      </tbody></table>` : `<div class="empty">${scope === 'stock' && !low ? 'На складе пока ничего нет. Оформите «Приход» или откройте «Весь каталог».' : 'Товаров не найдено'}</div>`;
+      </tbody></table>` : `<div class="empty">${scope === 'site' ? 'На сайте пока ничего не показывается. Откройте товар в «Весь каталог» и отметьте «Показывать на сайте».' : scope === 'stock' && !low ? 'На складе пока ничего нет. Оформите «Приход» или откройте «Весь каталог».' : 'Товаров не найдено'}</div>`;
   };
   const prodModal = (p = { unit: 'шт', warranty_months: 12, active: 1 }) => modal(p.id ? 'Товар' : 'Новый товар', `
     <div class="field"><label>Название *</label><input name="name" required value="${esc(p.name || '')}"></div>
@@ -1043,7 +1043,8 @@ route(/^\/stock$/, async (page) => {
     <div class="field"><label>Ед. изм.</label><select name="unit">${opts(['шт', 'компл', 'м', 'лист', 'упак', 'л', 'кг'], p.unit)}</select></div></div>
     <div class="row">${p.id ? '' : '<div class="field"><label>Начальный остаток</label><input name="stock" type="number" step="any" value="0"></div>'}
     <div class="field"><label>Мин. остаток (оповещение)</label><input name="min_stock" type="number" step="any" value="${p.min_stock || 0}"></div><div class="field"><label>Гарантия, мес.</label><input name="warranty_months" type="number" value="${p.warranty_months ?? 12}"></div></div>
-    ${p.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Активен (показывать в подборе)</label>` : ''}`,
+    ${p.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Активен (показывать в подборе)</label>` : ''}
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="site" ${p.site ? 'checked' : ''}> Показывать на сайте (витрина «Автосигнализации», цена берётся отсюда)</label>`,
   { onSubmit: async (d) => { if (p.id) await PUT('/api/products/' + p.id, d); else await POST('/api/products', d); toast('Сохранено'); load(); } });
 
   $('#q', page).oninput = debounce(load, 300);
