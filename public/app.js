@@ -1626,6 +1626,35 @@ route(/^\/finance\/bank$/, async (page, query) => {
       } });
   }));
 });
+// отзывы клиентов для сайта (переносятся с 2ГИС)
+async function loadReviewsCard(page) {
+  const box = $('#revCard', page); if (!box) return;
+  let d; try { d = await GET('/api/site/reviews'); } catch { box.remove(); return; }
+  const star = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+  box.innerHTML = `<h2>Отзывы на сайте</h2>
+    <div class="small muted" style="margin-bottom:10px">Перенесите сюда настоящие отзывы клиентов с вашей карточки 2ГИС — они появятся на сайте в блоке «Отзывы клиентов» вместе с рейтингом и кнопкой «Все отзывы на 2ГИС». Публикуйте только реальные отзывы, без изменений по смыслу.</div>
+    <form id="rvMeta"><div class="row"><div class="field" style="flex:2"><label>Ссылка на карточку 2ГИС</label><input name="twogis_url" value="${esc(d.twogis_url)}" placeholder="https://2gis.ru/irkutsk/firm/…"></div>
+      <div class="field"><label>Рейтинг на 2ГИС</label><input name="twogis_rating" type="number" step="0.1" min="1" max="5" value="${esc(d.twogis_rating)}" placeholder="4.9"></div>
+      <div class="field"><label>Всего отзывов</label><input name="twogis_count" type="number" min="0" value="${esc(d.twogis_count)}"></div></div>
+      <button class="sm primary">Сохранить</button> <a class="btn sm ghost" href="/#reviews" target="_blank">Посмотреть на сайте</a></form>
+    <div class="inline" style="margin:16px 0 8px"><h3 style="margin:0;flex:1">Отзывы (${d.reviews.length})</h3><button type="button" class="sm" id="rvAdd">+ Добавить отзыв</button></div>
+    ${d.reviews.length ? d.reviews.map((r) => `<div class="li" style="align-items:flex-start;${r.visible ? '' : 'opacity:.5'}"><div class="grow"><div class="t"><b>${esc(r.author)}</b> <span style="color:#f2a900">${star(r.rating)}</span> <span class="muted small">${r.date ? dmy(r.date) : ''} · ${esc(r.source || '')}${r.visible ? '' : ' · скрыт'}</span></div>
+      <div class="s" style="white-space:pre-line">${esc(r.text.length > 240 ? r.text.slice(0, 240) + '…' : r.text)}</div></div><button type="button" class="ghost sm" data-rve="${r.id}">✎</button><button type="button" class="ghost sm danger" data-rvd="${r.id}">✕</button></div>`).join('')
+      : '<div class="muted small">Пока нет отзывов. Откройте карточку на 2ГИС, скопируйте имя, дату, оценку и текст отзыва и нажмите «+ Добавить отзыв».</div>'}`;
+  $('#rvMeta', box).onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/site/reviews-meta', formData(e.target)); toast('Сохранено'); loadReviewsCard(page); } catch (err) { toast(err.message, true); } };
+  const edit = (r = { rating: 5, source: '2ГИС', visible: 1 }) => modal(r.id ? 'Отзыв' : 'Новый отзыв', `
+    <div class="row"><div class="field"><label>Имя автора (как на 2ГИС)</label><input name="author" value="${esc(r.author || '')}" required></div>
+      <div class="field"><label>Дата отзыва</label><input type="date" name="date" value="${esc(r.date || '')}"></div>
+      <div class="field"><label>Оценка</label><select name="rating">${opts([5, 4, 3, 2, 1].map((n) => [n, star(n)]), r.rating)}</select></div></div>
+    <div class="field"><label>Текст отзыва</label><textarea name="text" rows="7" required>${esc(r.text || '')}</textarea></div>
+    <div class="row"><div class="field"><label>Источник</label><input name="source" value="${esc(r.source || '2ГИС')}"></div>
+      <div class="field"><label>&nbsp;</label><label class="inline" style="color:var(--text)"><input type="checkbox" name="visible" ${r.visible ? 'checked' : ''} style="width:auto"> Показывать на сайте</label></div></div>`,
+  { onSubmit: async (v) => { if (r.id) await PUT('/api/site/reviews/' + r.id, v); else await POST('/api/site/reviews', v); toast('Сохранено'); loadReviewsCard(page); } });
+  $('#rvAdd', box).onclick = () => edit();
+  $$('[data-rve]', box).forEach((b) => (b.onclick = () => edit(d.reviews.find((x) => x.id === +b.dataset.rve))));
+  $$('[data-rvd]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить отзыв с сайта?', 'Удалить')) { await DEL('/api/site/reviews/' + b.dataset.rvd); loadReviewsCard(page); } }));
+}
+
 // карточка подключения Alfa API в Настройках
 async function loadAlfaCard(page, query = {}) {
   const box = $('#alfaCard', page); if (!box) return;
@@ -1994,6 +2023,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="revCard"><h2>Отзывы на сайте</h2><div class="muted">Загрузка…</div></div>
     <div class="card"><h2>Импорт журнала из Excel</h2>
       <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
       <input type="file" id="jfile" accept=".json,application/json" style="display:none"><button type="button" id="jbtn">⬆ Загрузить файл журнала</button></div>
@@ -2010,6 +2040,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   };
   loadUpdateCard(page);
   loadAlfaCard(page, query);
+  loadReviewsCard(page);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(e.target); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';
