@@ -630,6 +630,10 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'};${isEst ? 'display:none' : ''}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
       <div style="margin-top:10px;gap:8px;justify-content:flex-end;${isEst ? 'display:none' : ''}"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
     </div>
+    ${(o.saby || []).length ? `<div class="saby-box">${o.saby.map((x) => `<div class="saby-row ${x.status}">
+      <div><b>${x.status === 'pending' ? '⏳ Ждёт оплаты на кассе Saby' : x.status === 'paid' ? '✅ Оплачено на кассе Saby' : '✖ Отменено на кассе'}</b> · <span class="mono">${rub(x.status === 'paid' ? x.paid : x.amount)}</span>
+      <div class="small muted">отправлено ${dt(x.created_at)}${x.status === 'pending' ? ' · на кассе откройте «Заказы» → этот заказ → оплата картой' : ''}${x.error ? ` · <span style="color:var(--bad)">${esc(x.error)}</span>` : ''}</div></div>
+      ${x.status === 'pending' ? `<div class="inline" style="gap:6px"><button type="button" class="sm" data-sbc="${x.id}">Проверить</button><button type="button" class="sm ghost danger" data-sbx="${x.id}">Отменить</button></div>` : ''}</div>`).join('')}</div>` : ''}
     ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}${p.acquiring ? `<div class="small">эквайринг −${rub(p.acquiring)} (наш расход)</div>` : ''}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
   </div><div>
@@ -745,11 +749,21 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required value="${refund ? '' : Math.max(t.due, 0)}"></div>
     <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(refund ? { ...PAY_IN, transfer: 'С расчётного счёта' } : PAY_IN), 'cash')}</select></div></div>
     ${refund ? '' : `<div class="small muted" id="pmHint" style="margin:-4px 0 8px"></div>`}
+    ${!refund && S.me.saby_on ? `<label id="pmSaby" style="display:flex;gap:10px;align-items:flex-start;color:var(--text);margin:0 0 12px;cursor:pointer"><input type="checkbox" name="saby" checked style="width:18px;height:18px;flex:none;margin-top:2px"><span>Провести через кассу Saby — сумма уйдёт на кассу и терминал Альфа-Банка, чек пробьётся автоматически</span></label>` : ''}
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
   { onOpen: (f) => { const h = $('#pmHint', f); if (!h) return; const u = () => { const v = f.method.value, a = +f.amount.value || 0, pct = S.me.acquiring_percent ?? 2;
       h.textContent = v === 'terminal' ? `Зачислится на расчётный счёт. Эквайринг ${pct}% (${rub(a * pct / 100)}) — наш расход, клиент платит ${rub(a)}.` : v === 'card' ? 'Зачислится в кассу «Карта», без эквайринга.' : 'Зачислится в кассу «Наличные».'; };
-      f.method.onchange = u; f.amount.oninput = u; u(); },
-    submit: refund ? 'Оформить возврат' : 'Принять', onSubmit: async (d) => { await POST(`/api/orders/${o.id}/pay`, { ...d, refund }); toast(refund ? 'Возврат проведён' : 'Оплата принята'); reload(); } });
+      const sb = $('#pmSaby', f); const us = () => { if (sb) sb.style.display = f.method.value === 'terminal' ? '' : 'none'; };
+      f.method.onchange = () => { u(); us(); }; f.amount.oninput = u; u(); us(); },
+    submit: refund ? 'Оформить возврат' : 'Принять', onSubmit: async (d) => {
+      if (!refund && d.saby && d.method === 'terminal') {
+        await POST(`/api/orders/${o.id}/saby`, { amount: d.amount });
+        toast('Отправлено на кассу. На кассе: «Заказы» → ' + o.number + ' → оплата картой. CRM запишет оплату сама.'); return reload();
+      }
+      await POST(`/api/orders/${o.id}/pay`, { ...d, refund }); toast(refund ? 'Возврат проведён' : 'Оплата принята'); reload(); } });
+  $$('[data-sbc]', page).forEach((b) => (b.onclick = async () => { try { const r = await POST(`/api/saby/${b.dataset.sbc}/check`, {}); toast(r.status === 'paid' ? 'Оплата получена: ' + rub(r.paid) : r.error ? 'Saby: ' + r.error : 'Пока не оплачено' + (r.state ? ' (' + r.state + ')' : ''), !!r.error); if (r.status !== 'pending') reload(); } catch (e) { toast(e.message, true); } }));
+  $$('[data-sbx]', page).forEach((b) => (b.onclick = async () => { if (!(await confirmBox('Отменить оплату на кассе? Заказ на кассе Saby будет отменён.', 'Отменить'))) return; try { const r = await POST(`/api/saby/${b.dataset.sbx}/cancel`, {}); toast(r.status === 'paid' ? 'Уже оплачено на кассе — оплата записана' : 'Отменено'); reload(); } catch (e) { toast(e.message, true); } }));
+  if ((o.saby || []).some((x) => x.status === 'pending')) { const tm = setTimeout(() => { if (document.body.contains(page) && location.hash.includes('/orders/' + o.id)) reload(); }, 25000); }
   $('#pay', page).onclick = () => payModal(false);
   $('#refund', page).onclick = () => payModal(true);
   const dl = $('#delOrder', page);
@@ -1656,6 +1670,55 @@ async function loadReviewsCard(page) {
   $$('[data-rvd]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить отзыв с сайта?', 'Удалить')) { await DEL('/api/site/reviews/' + b.dataset.rvd); loadReviewsCard(page); } }));
 }
 
+// карточка онлайн-кассы Saby (Нева-01-Ф + терминал Альфа-Банка) в Настройках
+async function loadSabyCard(page) {
+  const box = $('#sabyCard', page); if (!box) return;
+  let a; try { a = await GET('/api/saby'); } catch { box.remove(); return; }
+  let nom = null; try { nom = JSON.parse(a.saby_nom || 'null'); } catch {}
+  box.innerHTML = `<h2>Онлайн-касса Saby ${a.ready ? '<span class="badge ok">работает</span>' : a.configured ? '<span class="badge warn">не завершена</span>' : '<span class="badge">не подключена</span>'}</h2>
+    <div class="small muted" style="margin-bottom:10px">При оплате «Терминал» CRM отправляет заказ с суммой на кассу Saby. Кассир открывает его в разделе «Заказы» и проводит оплату картой: Saby сам передаёт сумму на терминал Альфа-Банка и пробивает чек, а CRM записывает оплату.
+    Ключи: в Saby откройте <b>Настройки → Интеграция / API → Подключить приложение</b> (или попросите менеджера Saby), выберите сервисную авторизацию — Saby выдаст <b>ID приложения</b>, <b>защищённый ключ</b> и <b>сервисный ключ</b>.</div>
+    <form id="sabyF">
+    <div class="row"><div class="field"><label>ID приложения (app_client_id)</label><input name="saby_client_id" value="${esc(a.saby_client_id)}" autocomplete="off"></div></div>
+    <div class="row"><div class="field"><label>Защищённый ключ ${a.has_app_secret ? '<span class="muted">(сохранён)</span>' : ''}</label><input name="saby_app_secret" type="password" autocomplete="new-password" placeholder="${a.has_app_secret ? '•••••• (не менять)' : ''}"></div>
+      <div class="field"><label>Сервисный ключ ${a.has_secret_key ? '<span class="muted">(сохранён)</span>' : ''}</label><input name="saby_secret_key" type="password" autocomplete="new-password" placeholder="${a.has_secret_key ? '•••••• (не менять)' : ''}"></div></div>
+    <div class="inline" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><button class="primary">Сохранить</button>${a.configured ? '<button type="button" id="sbTest">Проверить и выбрать точку продаж</button><button type="button" class="ghost danger" id="sbOff">Отключить</button>' : ''}</div>
+    <div id="sbPick"></div>
+    ${a.saby_point_id ? `<div class="small" style="margin:6px 0">Точка продаж: <b>${esc(a.saby_point_name || a.saby_point_id)}</b> · прайс: <b>${esc(a.saby_price_list_name || a.saby_price_list_id || '—')}</b> · позиция для чека: <b>${esc(nom?.name || '—')}</b></div>` : ''}
+    ${a.saby_point_id ? `<div class="field"><label>Как пробивать позиции</label><select name="saby_mode">${opts([['items', 'Построчно — каждая услуга и товар отдельной строкой (если оплачивают весь заказ)'], ['single', 'Одной строкой — «Оплата по заказ-наряду №…»']], a.saby_mode || 'items')}</select></div>` : ''}
+    ${a.error ? `<div class="small" style="color:var(--bad)">Ошибка: ${esc(a.error)}</div>` : ''}</form>`;
+  const f = $('#sabyF', box);
+  f.onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/saby', formData(f)); toast('Сохранено'); loadSabyCard(page); } catch (err) { toast(err.message, true); } };
+  const off = $('#sbOff', box); if (off) off.onclick = async () => { if (await confirmBox('Отключить кассу Saby? Оплаты, уже записанные в CRM, останутся.', 'Отключить')) { await PUT('/api/saby', { disconnect: 1 }); loadSabyCard(page); } };
+  const tb = $('#sbTest', box); if (tb) tb.onclick = async () => {
+    const pick = $('#sbPick', box); pick.innerHTML = '<div class="muted small">Связываемся с Saby…</div>';
+    let pts; try { pts = (await POST('/api/saby/test', {})).points; } catch (e) { pick.innerHTML = `<div class="small" style="color:var(--bad)">${esc(e.message)}</div>`; return; }
+    if (!pts.length) { pick.innerHTML = '<div class="small" style="color:var(--bad)">Связь есть, но точек продаж не найдено. Проверьте, что у приложения есть доступ к разделу «Бизнес / Розница» и что касса подключена к точке.</div>'; return; }
+    pick.innerHTML = `<div class="row"><div class="field"><label>Точка продаж</label><select id="sbPt">${pts.map((p) => `<option value="${p.id}" ${String(p.id) === a.saby_point_id ? 'selected' : ''}>${esc(p.name || p.id)}${p.address ? ' — ' + esc(p.address) : ''}</option>`).join('')}</select></div>
+      <div class="field"><label>Прайс-лист</label><select id="sbPl"></select></div></div>
+      <div class="field"><label>Позиция Saby, через которую пробиваются услуги и товары (например «Услуги автосервиса»)</label><div class="inline"><input id="sbQ" placeholder="Поиск по каталогу Saby"><button type="button" id="sbFind">Найти</button></div><div id="sbNoms" class="small" style="margin-top:6px"></div></div>`;
+    const loadPl = async () => {
+      const pl = $('#sbPl', pick); pl.innerHTML = '<option>…</option>';
+      try { const list = await GET('/api/saby/prices' + qs({ pointId: $('#sbPt', pick).value })); const p = pts.find((x) => String(x.id) === $('#sbPt', pick).value);
+        pl.innerHTML = list.map((x) => `<option value="${x.id}" ${String(x.id) === (a.saby_price_list_id || String(p?.defaultPriceList || '')) ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Прайс-листов нет</option>'; }
+      catch (e) { pl.innerHTML = '<option value="">ошибка</option>'; toast(e.message, true); }
+    };
+    $('#sbPt', pick).onchange = loadPl; await loadPl();
+    const find = async () => {
+      const out = $('#sbNoms', pick); out.textContent = 'Ищем…';
+      try { const list = await GET('/api/saby/noms' + qs({ pointId: $('#sbPt', pick).value, priceListId: $('#sbPl', pick).value, q: $('#sbQ', pick).value }));
+        out.innerHTML = list.length ? list.map((x, i) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>${esc(x.name)} <span class="muted">${x.cost ? rub(x.cost) : ''}</span></span><button type="button" class="sm" data-nom="${i}">Выбрать</button></div>`).join('') : 'Ничего не найдено — создайте в Saby услугу «Услуги автосервиса» с ценой 0 и найдите её здесь.';
+        $$('[data-nom]', out).forEach((b) => (b.onclick = async () => {
+          const n = list[+b.dataset.nom]; const pt = $('#sbPt', pick), pl = $('#sbPl', pick);
+          try { await PUT('/api/saby', { saby_point_id: pt.value, saby_point_name: pt.selectedOptions[0]?.textContent || '', saby_price_list_id: pl.value, saby_price_list_name: pl.selectedOptions[0]?.textContent || '', saby_nom: n });
+            toast('Касса Saby настроена'); loadSabyCard(page); S.me.saby_on = true; } catch (e) { toast(e.message, true); }
+        }));
+      } catch (e) { out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+    };
+    $('#sbFind', pick).onclick = find; $('#sbQ', pick).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
+  };
+}
+
 // карточка подключения Alfa API в Настройках
 async function loadAlfaCard(page, query = {}) {
   const box = $('#alfaCard', page); if (!box) return;
@@ -2024,6 +2087,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="revCard"><h2>Отзывы на сайте</h2><div class="muted">Загрузка…</div></div>
     <div class="card"><h2>Импорт журнала из Excel</h2>
       <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
@@ -2041,6 +2105,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   };
   loadUpdateCard(page);
   loadAlfaCard(page, query);
+  loadSabyCard(page);
   loadReviewsCard(page);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();

@@ -111,6 +111,7 @@ server.listen(PORT, HOST, () => {
   require('./lib/notify').start(botHandlers);
   require('./lib/warranty').start();
   require('./lib/bank').start();
+  require('./lib/saby').start();
 });
 
 const shutdown = () => { server.close(); process.exit(0); };

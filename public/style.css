@@ -399,3 +399,9 @@ html.pwa .side { padding-top: max(16px, env(safe-area-inset-top)); }
 /* Предварительный расчёт */
 .st-estimate { background: rgba(167,139,250,.16); color: #c4b5fd; }
 .estcard { border-color: rgba(167,139,250,.45); background: linear-gradient(180deg, rgba(167,139,250,.08), transparent); }
+
+/* оплата через кассу Saby */
+.saby-box{margin-top:12px;display:grid;gap:8px}
+.saby-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
+.saby-row.pending{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--card))}
+.saby-row.paid{border-color:var(--ok)}
