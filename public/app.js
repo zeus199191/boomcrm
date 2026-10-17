@@ -33,7 +33,7 @@ const ROLES = { admin: 'Администратор', senior: 'Руководит
 const myRole = () => (S.me.user.role === 'manager' && S.me.user.is_master ? 'senior' : S.me.user.role);
 const LEAD_ST = { new: 'Новая', work: 'В работе', converted: 'Заказ создан', lost: 'Отказ' };
 const SOURCES = ['Рекомендация', 'Авито', 'Яндекс Карты', '2ГИС', 'ВКонтакте', 'Telegram', 'Instagram', 'Сайт', 'Проезжал мимо', 'Постоянный клиент'];
-const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Кредит', 'Эквайринг', 'Зарплата руководителей', 'Прочее'];
+const EXPENSE_CATS = ['Аренда', 'Закупка товара', 'Расходники', 'Зарплата', 'Коммунальные', 'Реклама', 'Инструмент', 'Налоги', 'Кредит', 'Банковская комиссия', 'Эквайринг', 'Зарплата руководителей', 'Прочее'];
 const INCOME_CATS = ['Оплата заказа', 'Продажа без заказа', 'Внесение в кассу', 'Прочее'];
 
 const S = { me: null, staff: [], services: null };
@@ -1470,7 +1470,7 @@ route(/^\/finance$/, async (page, query) => {
   const byM = (dir) => Object.entries(METHODS).map(([k, t]) => [t, r.byMethod.find((x) => x.direction === dir && x.method === k)?.s || 0]);
   const catList = (dir) => r.byCategory.filter((x) => x.direction === dir);
   const maxCat = Math.max(1, ...r.byCategory.map((x) => x.s));
-  page.innerHTML = `<div class="topbar"><h1>Финансы</h1><div class="sp"></div>${periodBar(page, from, to)}</div>
+  page.innerHTML = `<div class="topbar"><h1>Финансы</h1><a class="btn sm" href="#/finance/bank">🏦 Банк${mb.bank_new ? ` <span class="badge red">${mb.bank_new}</span>` : ''}</a><div class="sp"></div>${periodBar(page, from, to)}</div>
   <div class="card"><div class="inline" style="margin-bottom:10px;flex-wrap:wrap"><h2 style="margin:0;flex:1">Деньги в кассах</h2>
       <button class="sm" id="cashOut">💵 Обналичить</button><button class="sm" id="moveMoney">⇄ Перемещение</button>${isAdmin() ? '<button class="sm" id="reconcile">✓ Сверка остатков</button>' : ''}</div>
     <div class="grid g4" style="margin-bottom:12px">${Object.entries(WALLET).map(([k, t]) => `<div class="kpi"><div class="l">${t} — сейчас</div><div class="v ${mb.now[k] < 0 ? 'bad' : ''}">${rub(mb.now[k])}</div></div>`).join('')}
@@ -1558,6 +1558,116 @@ route(/^\/finance$/, async (page, query) => {
   $('#addOut', page).onclick = () => payModal('out');
   $$('[data-delp]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию из кассы? Если это оплата картой, вместе с ней удалится и её эквайринг.', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delp); navigate(); } }));
 });
+
+// ================= Банк: операции по расчётному счёту (Альфа-Банк) =================
+const fileToDataURL = (file) => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => no(new Error('Не удалось прочитать файл')); fr.readAsDataURL(file); });
+route(/^\/finance\/bank$/, async (page, query) => {
+  const st = query.st ?? 'new';
+  const [d, mb, alfa, contrs] = await Promise.all([GET('/api/bank/tx' + qs({ status: st })), GET('/api/money/balances'), isAdmin() ? GET('/api/alfa').catch(() => null) : null, contractorsList()]);
+  const crmAcc = mb.now.transfer;
+  const diff = d.bank_balance === null ? null : Math.round((d.bank_balance - crmAcc) * 100) / 100;
+  const aText = (r) => r.status === 'skip' ? `<span class="muted">${esc(r.note || 'Пропущено')}</span>`
+    : r.status === 'done' ? `${String(r.action || '').startsWith('auto:') ? '<span class="badge">авто</span> ' : ''}${esc(r.note || r.p_category || '')}${r.p_order ? ` · <a href="#/orders/${r.p_order}">${orderNo(r.p_order)}</a>` : ''}${r.p_contractor ? ' · ' + esc(r.p_contractor) : ''}`
+    : r.suggestion ? `<span style="color:var(--warn)">Предлагаю: ${esc(r.suggestion.text)}</span>` : '<span class="muted">Нужно выбрать, куда отнести</span>';
+  page.innerHTML = `<div class="topbar"><button class="ghost" onclick="location.hash='#/finance'">←</button><h1>Банк</h1><div class="sp"></div>
+    ${alfa && alfa.connected ? '<button id="sync">⟳ Загрузить из Альфа-Банка</button>' : ''}<label class="btn">⬆ Файл выписки (1С)<input type="file" id="bf" accept=".txt,text/plain" hidden></label>
+    ${isAdmin() ? '<a class="btn ghost" href="#/settings">Подключение</a>' : ''}</div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="kpi"><div class="l">Остаток в банке${d.bank_balance_date ? ' на ' + dmy(d.bank_balance_date) : ''}</div><div class="v">${d.bank_balance === null ? '—' : rub(d.bank_balance)}</div><div class="small muted">по последней выписке</div></div>
+    <div class="kpi"><div class="l">Расчётный счёт в CRM</div><div class="v">${rub(crmAcc)}</div></div>
+    <div class="kpi"><div class="l">Расхождение</div><div class="v ${diff && Math.abs(diff) > 1 ? 'bad' : 'ok'}">${diff === null ? '—' : rub(diff)}</div><div class="small muted">${diff && Math.abs(diff) > 1 ? 'разнесите операции или сверьте остатки' : diff === null ? 'загрузите выписку' : 'совпадает'}</div></div>
+    <div class="kpi"><div class="l">Требуют решения</div><div class="v ${d.counts.new ? 'bad' : 'ok'}">${d.counts.new || 0}</div></div></div>
+  ${alfa && !alfa.connected ? `<div class="card small muted">Альфа-Банк ещё не подключён по API — пока можно загружать выписку файлом: Альфа-Бизнес → Выписка → «Экспорт в 1С» (файл .txt). <a href="#/settings">Подключить Alfa API</a></div>` : ''}
+  ${alfa && alfa.error ? `<div class="card" style="border-color:var(--bad)"><b>Ошибка связи с банком:</b> ${esc(alfa.error)}</div>` : ''}
+  <div class="chips" style="margin-bottom:12px">${[['new', `Требуют решения (${d.counts.new || 0})`], ['done', `Разнесены (${d.counts.done || 0})`], ['skip', `Пропущены (${d.counts.skip || 0})`], ['', 'Все']].map(([k, t]) => `<button class="chip ${k === st ? 'on' : ''}" data-st="${k}">${t}</button>`).join('')}</div>
+  <div class="card" style="padding:4px 6px">${d.rows.length ? `<div class="tblwrap"><table class="tbl resp"><thead><tr><th>Дата</th><th class="r">Сумма</th><th>Контрагент</th><th>Назначение</th><th>Разноска</th><th></th></tr></thead><tbody>
+    ${d.rows.map((r) => `<tr><td data-l="Дата" class="nowrap">${dmy(r.date)}</td>
+      <td data-l="Сумма" class="r mono" style="color:${r.direction === 'in' ? 'var(--ok)' : 'var(--bad)'}">${r.direction === 'in' ? '+' : '−'}${num(r.amount)}</td>
+      <td data-l="Контрагент">${esc(r.cp_name || '—')}${r.cp_inn ? `<div class="small muted">ИНН ${esc(r.cp_inn)}</div>` : ''}</td>
+      <td data-l="Назначение" class="small" style="max-width:360px">${esc(r.purpose || '')}</td>
+      <td data-l="Разноска" class="small">${aText(r)}</td>
+      <td class="nowrap">${r.status === 'new' ? `${r.suggestion ? `<button class="sm primary" data-ok="${r.id}">Провести</button> ` : ''}<button class="sm" data-man="${r.id}">Разнести…</button>` : isAdmin() ? `<button class="ghost sm" data-undo="${r.id}" title="Отменить разноску">↺</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">${st === 'new' ? 'Все операции банка разнесены' : 'Операций нет'}</div>`}</div>
+  <div class="small muted">Автоматически разносятся: оплаты, которые уже есть в CRM (та же сумма ±3 дня), возмещение по терминалу (оплаты уже учтены в заказах), платежи контрагентам и от них по ИНН, оплаты с номером заказа «БС-…» в назначении, аренда, налоги, кредит и комиссии банка. Остальное — вручную кнопкой «Разнести…».</div>`;
+  $$('[data-st]', page).forEach((b) => (b.onclick = () => go('/finance/bank' + qs({ st: b.dataset.st }))));
+  const sy = $('#sync', page);
+  if (sy) sy.onclick = async () => { sy.disabled = true; sy.textContent = 'Загружаю…'; try { const r = await POST('/api/alfa/sync', {}); toast(`Из банка: ${r.fetched}, новых ${r.added}, разнесено автоматически ${r.auto}`); } catch (e) { toast(e.message, true); } navigate(); };
+  $('#bf', page).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const r = await POST('/api/bank/upload', { data: await fileToDataURL(f) }); toast(`Операций в файле: ${r.total}, новых ${r.added}, разнесено автоматически ${r.auto}`); } catch (err) { toast(err.message, true); }
+    navigate();
+  };
+  const byId = (id) => d.rows.find((x) => x.id === +id);
+  $$('[data-ok]', page).forEach((b) => (b.onclick = async () => { const r = byId(b.dataset.ok); try { await POST(`/api/bank/tx/${r.id}/apply`, r.suggestion); toast('Проведено'); navigate(); } catch (e) { toast(e.message, true); } }));
+  $$('[data-undo]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Отменить разноску? Созданная в кассе операция будет удалена, банковская операция вернётся в «Требуют решения».', 'Отменить')) { await POST(`/api/bank/tx/${b.dataset.undo}/undo`, {}); navigate(); } }));
+  $$('[data-man]', page).forEach((b) => (b.onclick = async () => {
+    const r = byId(b.dataset.man); const cand = await GET(`/api/bank/tx/${r.id}/candidates`);
+    const inc = r.direction === 'in';
+    const types = [['category', inc ? 'Приход по статье' : 'Расход по статье'], ['contractor', inc ? 'Оплата от контрагента' : 'Оплата контрагенту'], ...(inc ? [['order', 'Оплата заказа']] : [['cash', 'Снятие наличных (в кассу «Наличные»)']]),
+      ...(cand.length ? [['link', 'Это операция, уже внесённая в CRM']] : []), ['skip', 'Пропустить (не учитывать в CRM)']];
+    modal(`${inc ? 'Поступление' : 'Списание'} ${rub(r.amount)} · ${dmy(r.date)}`, `
+      <div class="small muted" style="margin-bottom:10px">${esc(r.cp_name || '')}${r.cp_inn ? ' · ИНН ' + esc(r.cp_inn) : ''}<br>${esc(r.purpose || '')}</div>
+      <div class="field"><label>Куда отнести</label><select name="type" id="bt">${opts(types, r.suggestion?.type && types.some((t) => t[0] === r.suggestion.type) ? r.suggestion.type : 'category')}</select></div>
+      <div class="field bt-x" data-for="category"><label>Статья</label><input name="category" list="bcats" value="${esc(r.suggestion?.category || (inc ? 'Прочий приход' : ''))}" placeholder="Например: Аренда"><datalist id="bcats">${(inc ? INCOME_CATS : EXPENSE_CATS).map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="field bt-x" data-for="contractor"><label>Контрагент</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name + (c.inn ? ' · ИНН ' + c.inn : '')]), r.suggestion?.contractor_id || '', '— выберите —')}</select></div>
+      <div class="field bt-x" data-for="order"><label>Номер заказа</label><input name="order_id" type="number" placeholder="например 12 (для БС-00012)" value="${r.suggestion?.order_id || ''}"></div>
+      <div class="field bt-x" data-for="link"><label>Операция в CRM</label><select name="payment_id">${opts(cand.map((p) => [p.id, `${dt(p.created_at)} · ${rub(p.amount)} · ${p.category || ''}${p.contractor ? ' · ' + p.contractor : ''}${p.order_id ? ' · ' + orderNo(p.order_id) : ''}`]), cand[0]?.id)}</select></div>
+      <div class="field bt-x" data-for="skip"><label>Причина</label><select name="skipwhy">${opts([['Перевод между своими счетами', 'Перевод между своими счетами'], ['Возмещение по терминалу (уже учтено в заказах)', 'Возмещение по терминалу (уже учтено в заказах)'], ['Не относится к студии', 'Не относится к студии']])}</select></div>`,
+    { submit: 'Провести', onOpen: (f) => { const sync = () => $$('.bt-x', f).forEach((x) => x.classList.toggle('hidden', x.dataset.for !== f.type.value)); f.type.onchange = sync; sync(); },
+      onSubmit: async (v) => {
+        const a = { type: v.type };
+        if (v.type === 'category') { if (!v.category) { toast('Укажите статью', true); return false; } a.category = v.category; a.text = (inc ? 'Приход: ' : 'Расход: ') + v.category; }
+        if (v.type === 'contractor') { if (!v.contractor_id) { toast('Выберите контрагента', true); return false; } a.contractor_id = v.contractor_id; a.text = (inc ? 'Оплата от ' : 'Оплата ') + (contrs.find((c) => c.id === +v.contractor_id)?.name || ''); }
+        if (v.type === 'order') { if (!v.order_id) { toast('Укажите номер заказа', true); return false; } a.order_id = v.order_id; a.text = 'Оплата заказа ' + orderNo(+v.order_id); }
+        if (v.type === 'link') { a.payment_id = v.payment_id; a.text = 'Связано с операцией в CRM'; }
+        if (v.type === 'cash') a.text = 'Снятие наличных';
+        if (v.type === 'skip') a.text = v.skipwhy;
+        await POST(`/api/bank/tx/${r.id}/apply`, a); toast('Проведено'); navigate();
+      } });
+  }));
+});
+// карточка подключения Alfa API в Настройках
+async function loadAlfaCard(page, query = {}) {
+  const box = $('#alfaCard', page); if (!box) return;
+  let a; try { a = await GET('/api/alfa'); } catch { box.remove(); return; }
+  if (query.alfa) toast(query.alfa === 'ok' ? 'Альфа-Банк подключён' : 'Альфа-Банк: ' + query.alfa, query.alfa !== 'ok');
+  const redirect = a.alfa_redirect_uri || location.origin + '/api/alfa/callback';
+  box.innerHTML = `<h2>Альфа-Банк (Alfa API) ${a.connected ? '<span class="badge ok">подключён</span>' : '<span class="badge">не подключён</span>'}</h2>
+    <div class="small muted" style="margin-bottom:10px">Выписка по расчётному счёту загружается автоматически каждые 30 минут и разносится по кассе CRM (страница Финансы → Банк).
+    Чтобы подключить: в Альфа-Бизнесе оформите доступ к <b>Alfa API</b> (раздел «Интеграции / API» или через менеджера банка), зарегистрируйте приложение с адресом возврата
+    <code style="user-select:all">${esc(redirect)}</code> — банк выдаст <b>client_id</b>, <b>client_secret</b> и <b>сертификат с ключом</b>. Сначала банк даёт тестовый стенд, затем боевой.</div>
+    <form id="alfaF">
+    <div class="row"><div class="field"><label>Среда</label><select name="alfa_env">${opts([['sandbox', 'Тестовая (sandbox)'], ['prod', 'Боевая']], a.alfa_env || 'sandbox')}</select></div>
+      <div class="field"><label>Расчётный счёт (20 цифр)</label><input name="alfa_account" value="${esc(a.alfa_account)}" inputmode="numeric" maxlength="20"></div></div>
+    <div class="row"><div class="field"><label>client_id</label><input name="alfa_client_id" value="${esc(a.alfa_client_id)}" autocomplete="off"></div>
+      <div class="field"><label>client_secret ${a.has_secret ? '<span class="muted">(сохранён)</span>' : ''}</label><input name="alfa_client_secret" type="password" autocomplete="new-password" placeholder="${a.has_secret ? '•••••• (не менять)' : ''}"></div></div>
+    <div class="row"><div class="field"><label>Сертификат банка (.crt/.pem) ${a.has_cert ? '<span class="badge ok">загружен</span>' : ''}</label><input type="file" id="acrt" accept=".crt,.pem,.cer,.txt"></div>
+      <div class="field"><label>Закрытый ключ (.key/.pem) ${a.has_key ? '<span class="badge ok">загружен</span>' : ''}</label><input type="file" id="akey" accept=".key,.pem,.txt"></div>
+      <div class="field"><label>Пароль ключа (если есть)</label><input name="alfa_key_pass" type="password" autocomplete="new-password"></div></div>
+    <details style="margin:4px 0 10px"><summary class="muted small" style="cursor:pointer">Адреса API (менять, только если банк дал другие)</summary>
+      <div class="row" style="margin-top:8px"><div class="field"><label>Адрес API</label><input name="alfa_api_url" value="${esc(a.alfa_api_url)}" placeholder="${esc(a.defaults.env[a.alfa_env === 'prod' ? 'prod' : 'sandbox'].api)}"></div>
+        <div class="field"><label>Адрес входа Alfa ID</label><input name="alfa_auth_url" value="${esc(a.alfa_auth_url)}" placeholder="${esc(a.defaults.env[a.alfa_env === 'prod' ? 'prod' : 'sandbox'].auth)}"></div></div>
+      <div class="row"><div class="field"><label>Метод выписки</label><input name="alfa_statement_path" value="${esc(a.alfa_statement_path)}" placeholder="${esc(a.defaults.statement_path)}"></div>
+        <div class="field"><label>Scope</label><input name="alfa_scope" value="${esc(a.alfa_scope)}" placeholder="${esc(a.defaults.scope)}"></div>
+        <div class="field"><label>Адрес возврата (redirect_uri)</label><input name="alfa_redirect_uri" value="${esc(a.alfa_redirect_uri)}" placeholder="${esc(location.origin + '/api/alfa/callback')}"></div></div></details>
+    <div class="inline" style="flex-wrap:wrap;gap:8px"><button class="primary">Сохранить</button>
+      <button type="button" id="alogin">🔑 Войти через Alfa ID</button>${a.connected ? '<button type="button" id="atest">Проверить связь</button><button type="button" id="async">⟳ Загрузить выписку</button><button type="button" class="ghost danger" id="aoff">Отключить</button>' : ''}</div>
+    <div class="field" style="margin-top:10px"><label>Если после входа банк открыл адрес, которого нет (например localhost), — вставьте его сюда целиком или только code</label>
+      <div class="inline"><input id="acode" placeholder="https://…?code=…"><button type="button" id="acodeBtn">Подтвердить</button></div></div>
+    <div class="small muted">${a.last_sync ? 'Последняя загрузка: ' + dt(a.last_sync) : ''}${a.error ? ` <span style="color:var(--bad)">Ошибка: ${esc(a.error)}</span>` : ''}</div></form>`;
+  const f = $('#alfaF', box);
+  const readFile = (inp) => new Promise((ok) => { const file = inp.files[0]; if (!file) return ok(''); const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.readAsText(file); });
+  f.onsubmit = async (e) => {
+    e.preventDefault(); const d = formData(f);
+    d.alfa_cert = await readFile($('#acrt', f)); d.alfa_key = await readFile($('#akey', f));
+    try { await PUT('/api/alfa', d); toast('Сохранено'); loadAlfaCard(page); } catch (err) { toast(err.message, true); }
+  };
+  $('#alogin', box).onclick = async () => { try { await PUT('/api/alfa', formData(f)); const r = await POST('/api/alfa/auth-url', {}); location.href = r.url; } catch (e) { toast(e.message, true); } };
+  $('#acodeBtn', box).onclick = async () => { try { await POST('/api/alfa/code', { code: $('#acode', box).value }); toast('Альфа-Банк подключён'); loadAlfaCard(page); } catch (e) { toast(e.message, true); } };
+  const t = $('#atest', box); if (t) t.onclick = async () => { try { const r = await POST('/api/alfa/test', {}); toast('Связь есть: ' + (r.info?.organizationName || r.info?.name || r.info?.shortName || 'данные компании получены')); } catch (e) { toast(e.message, true); } };
+  const sy = $('#async', box); if (sy) sy.onclick = async () => { try { const r = await POST('/api/alfa/sync', { days: 7 }); toast(`Операций: ${r.fetched}, новых ${r.added}, разнесено ${r.auto}`); } catch (e) { toast(e.message, true); } };
+  const off = $('#aoff', box); if (off) off.onclick = async () => { if (await confirmBox('Отключить Альфа-Банк? Загруженные операции останутся.', 'Отключить')) { await PUT('/api/alfa', { disconnect: 1 }); loadAlfaCard(page); } };
+}
 
 // ================= Зарплата =================
 route(/^\/salary$/, async (page, query) => {
@@ -1813,7 +1923,7 @@ async function loadUpdateCard(page) {
   if (running) setTimeout(() => pollUpdate(page), 4000);
 }
 function pollUpdate(page) { if (location.hash.startsWith('#/settings')) loadUpdateCard(page).catch(() => setTimeout(() => pollUpdate(page), 4000)); }
-route(/^\/settings$/, async (page) => {
+route(/^\/settings$/, async (page, query = {}) => {
   const s = await GET('/api/settings');
   const origin = location.origin;
   page.innerHTML = `<div class="topbar"><h1>Настройки</h1></div>
@@ -1883,6 +1993,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   </div><div style="margin-top:14px"><button class="primary">Сохранить настройки</button></div></form>
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card"><h2>Импорт журнала из Excel</h2>
       <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
       <input type="file" id="jfile" accept=".json,application/json" style="display:none"><button type="button" id="jbtn">⬆ Загрузить файл журнала</button></div>
@@ -1898,6 +2009,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     e.target.value = '';
   };
   loadUpdateCard(page);
+  loadAlfaCard(page, query);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(e.target); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';
