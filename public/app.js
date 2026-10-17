@@ -373,7 +373,8 @@ route(/^\/$/, async (page) => {
 // ================= Новый заказ =================
 async function newOrderModal(pre = {}) {
   const bays = S.me.bays;
-  const m = modal('Новый заказ-наряд', `
+  const est = !!pre.estimate;
+  const m = modal(est ? 'Предварительный расчёт' : 'Новый заказ-наряд', `${est ? '<div class="small muted" style="margin-bottom:10px">Расчёт не попадает в журнал записи и не списывает склад. Когда клиент согласится — переведёте его в заказ-наряд одной кнопкой.</div>' : ''}
     <input type="hidden" name="client_id" value="${esc(pre.client_id || '')}">
     <input type="hidden" name="lead_id" value="${esc(pre.lead_id || '')}">
     <div class="field" id="clientPick"><label>Клиент — поиск по имени, телефону, госномеру</label>
@@ -395,20 +396,21 @@ async function newOrderModal(pre = {}) {
       <div class="field"><label>Пост</label><select name="bay">${opts(bays, pre.bay, '—')}</select></div>
       <div class="field"><label>Мастер</label><select name="master_id">${masterOpts(pre.master_id)}</select></div></div>
     <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>`,
-  { wide: true, submit: 'Создать заказ', onSubmit: async (d) => {
-    if (d.scheduled_at && isDayOff(d.scheduled_at) && !(await confirmBox(`${dmy(d.scheduled_at)} — выходной день. Записать в виде исключения?`, 'Да, записать'))) return false;
+  { wide: true, submit: est ? 'Создать расчёт' : 'Создать заказ', onSubmit: async (d) => {
+    if (!est && d.scheduled_at && isDayOff(d.scheduled_at) && !(await confirmBox(`${dmy(d.scheduled_at)} — выходной день. Записать в виде исключения?`, 'Да, записать'))) return false;
     const body = { client_id: d.client_id || null, lead_id: d.lead_id || null, car_id: d.car_id || null, scheduled_at: d.scheduled_at || null, end_date: d.end_date || null,
-      duration_min: Math.round((+d.duration_h || 2) * 60), bay: d.bay, master_id: d.master_id, complaint: d.complaint };
+      duration_min: Math.round((+d.duration_h || 2) * 60), bay: d.bay, master_id: d.master_id, complaint: d.complaint, estimate: est };
     if (!body.client_id) {
       if (!d.nc_name) { toast('Выберите клиента или заполните нового', true); return false; }
       body.new_client = { name: d.nc_name, phone: d.nc_phone, source: d.nc_source };
     }
     if (!body.car_id) body.new_car = { brand: d.car_brand, model: d.car_model, plate: d.car_plate, year: d.car_year };
     const r = await POST('/api/orders', body);
-    toast('Заказ ' + orderNo(r.id) + ' создан');
+    toast((est ? 'Расчёт ' : 'Заказ ') + orderNo(r.id) + ' создан');
     go('/orders/' + r.id);
   } });
   const f = m.form;
+  if (est) f.scheduled_at.closest('.row').classList.add('hidden'); // в расчёте запись не нужна
   const remark = () => markMasters(f, f.scheduled_at.value, f.end_date.value);
   f.scheduled_at.addEventListener('change', remark); f.end_date.addEventListener('change', remark); remark();
   const setNew = (on) => { $('#newClient', f).classList.toggle('hidden', !on); $('#clientPick', f).classList.toggle('hidden', on); if (on) { f.client_id.value = ''; loadCars(null); } };
@@ -440,8 +442,8 @@ route(/^\/orders$/, async (page, query) => {
   const st = query.status || 'active';
   page.innerHTML = `<div class="topbar"><h1>Заказ-наряды</h1><div class="sp"></div>
     <input class="search" id="q" placeholder="Поиск: №, клиент, телефон, госномер" value="${esc(query.q || '')}">
-    ${isOffice() ? '<button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
-    <div class="chips" style="margin-bottom:12px">${[['active', 'Активные'], ...Object.entries(S.me.statuses), ['', 'Все']].map(([k, t]) => `<button class="chip ${k === st ? 'on' : ''}" data-st="${k}">${t}</button>`).join('')}</div>
+    ${isOffice() ? '<button id="newEst">+ Расчёт</button><button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
+    <div class="chips" style="margin-bottom:12px">${[['active', 'Активные'], ...(isOffice() ? [['estimate', 'Расчёты']] : []), ...Object.entries(S.me.statuses).filter(([k]) => k !== 'estimate'), ['', 'Все']].map(([k, t]) => `<button class="chip ${k === st ? 'on' : ''}" data-st="${k}">${t}</button>`).join('')}</div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
   let cur = st;
   const load = async () => {
@@ -457,27 +459,29 @@ route(/^\/orders$/, async (page, query) => {
   $('#q', page).oninput = debounce(load, 300);
   $('#list', page).onclick = (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) go('/orders/' + tr.dataset.id); };
   const nb = $('#newOrder', page); if (nb) nb.onclick = () => newOrderModal();
+  const ne = $('#newEst', page); if (ne) ne.onclick = () => newOrderModal({ estimate: true });
   await load();
 });
 
 // ---------- Товар в заказ: со склада или от поставщика ----------
-function productAddModal(o, p, suppliers, reload) {
+function productAddModal(o, p, suppliers, reload, est = false) {
   const m = modal('Товар в заказ', `
     <div style="margin-bottom:10px"><b>${esc(p.name)}</b><div class="small muted">На складе: <b id="stk">${num(p.stock)} ${esc(p.unit)}</b> · розница ${rub(p.price)}${p.cost ? ' · закупка ' + rub(p.cost) : ''}</div></div>
     <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
     <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" value="${p.price}" step="any"></div></div>
-    <div class="row"><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада —')}</select></div>
+    <div class="row" ${est ? 'style="display:none"' : ''}><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада —')}</select></div>
     <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${p.cost || ''}" step="any"></div></div>
     <div class="small" id="hint"></div>`,
   { submit: 'Добавить', onSubmit: async (d) => {
     const qty = +d.qty || 1;
-    if (!d.contractor_id && qty > p.stock && !(await confirmBox(`На складе ${num(p.stock)}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
+    if (!est && !d.contractor_id && qty > p.stock && !(await confirmBox(`На складе ${num(p.stock)}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
     if (d.contractor_id && qty > Math.max(p.stock, 0) && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг поставщику', true); return false; }
     await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty, price: d.price, cost: d.cost, contractor_id: d.contractor_id || null });
     reload();
   } });
   const f = m.form;
   const hint = () => {
+    if (est) { $('#hint', f).innerHTML = '<span class="muted">В расчёте склад не резервируется — поставщика укажете после перевода в заказ-наряд.</span>'; return; }
     const qty = +f.qty.value || 0; const miss = Math.max(0, qty - Math.max(p.stock, 0));
     const sup = f.contractor_id.selectedOptions[0];
     $('#hint', f).innerHTML = !miss ? (f.contractor_id.value ? `<span class="muted">Товар есть на складе — долг не возникнет, поставщик будет указан в заказе.</span>` : '')
@@ -485,6 +489,17 @@ function productAddModal(o, p, suppliers, reload) {
       : `<span style="color:var(--bad)">На складе не хватает ${num(miss)}. Выберите поставщика, чтобы учесть долг перед ним.</span>`;
   };
   ['input', 'change'].forEach((ev) => f.addEventListener(ev, hint)); hint();
+}
+
+// Товар не из каталога (вписывается вручную)
+function customProductModal(o, name, reload) {
+  modal('Свой товар', `
+    <div class="field"><label>Наименование</label><input name="name" value="${esc(name)}" required></div>
+    <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
+    <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" step="any" required></div>
+    <div class="field"><label>Закупка, ₽ (необязательно)</label><input type="number" name="cost" step="any"></div></div>
+    <div class="small muted">Товар не будет списываться со склада — его нет в каталоге.</div>`,
+  { submit: 'Добавить', onSubmit: async (d) => { await POST(`/api/orders/${o.id}/items`, { kind: 'product', name: d.name, qty: d.qty, price: d.price, cost: d.cost, warranty_months: 0 }); reload(); } });
 }
 
 // ---------- Приёмка автомобиля ----------
@@ -575,7 +590,8 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const o = await GET('/api/orders/' + id);
   const office = isOffice();
   const contrs = office ? await contractorsList() : [];
-  const statusButtons = (role() === 'master' ? ['in_work', 'waiting', 'done'] : Object.keys(S.me.statuses));
+  const statusButtons = (role() === 'master' ? ['in_work', 'waiting', 'done'] : Object.keys(S.me.statuses).filter((k) => k !== 'estimate'));
+  const isEst = o.status === 'estimate';
   const t = o.totals;
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
   const itemRows = (list, kind) => list.map((i) => `<tr data-item="${i.id}">
@@ -588,9 +604,13 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     ${office ? `<td style="width:40px"><button type="button" class="ghost sm danger" data-del="${i.id}" title="Удалить">✕</button></td>` : ''}</tr>`).join('');
   const issuedLocked = o.status === 'issued';
 
-  page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>Заказ ${o.number}</h1>${stBadge(o.status)}<div class="sp"></div>
-    ${office ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a><button class="sm" id="toWarranty">🛡 Принять на гарантию</button></div>` : ''}</div>
-  <div class="card" style="margin-bottom:14px"><h3>Статус</h3><div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>
+  page.innerHTML = `<div class="topbar"><button class="ghost" onclick="history.back()">←</button><h1>${isEst ? 'Расчёт' : 'Заказ'} ${o.number}</h1>${stBadge(o.status)}<div class="sp"></div>
+    ${office && isEst ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/estimate">🖨 Бланк расчёта</a></div>` : ''}
+    ${office && !isEst ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a><button class="sm" id="toWarranty">🛡 Принять на гарантию</button></div>` : ''}</div>
+  ${isEst ? `<div class="card estcard" style="margin-bottom:14px"><div class="inline" style="flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px">Предварительный расчёт</h2>
+    <div class="small muted">Цены актуальны на дату обращения — <b>${dmy(o.estimate_at || o.created_at)}</b>. Пока это расчёт: в журнал не попадает, склад не списывается, долги поставщикам не создаются.</div></div>
+    ${office ? `<button type="button" class="ghost sm danger" id="estCancel">Клиент отказался</button><button type="button" class="primary" id="estConvert">✅ Клиент согласен — в заказ-наряд</button>` : ''}</div></div>` : ''}
+  <div class="card" style="margin-bottom:14px${isEst ? ';display:none' : ''}"><h3>Статус</h3><div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>
     ${o.status === 'done' && office && t.due > 0.5 ? `<div class="small" style="margin-top:8px;color:var(--warn)">Перед выдачей примите оплату: к оплате ${rub(t.due)}</div>` : ''}</div>
   <div class="grid g-main"><div>
     <div class="card"><h2>Работы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Услуга</th><th>Мастер</th><th>Кол-во</th><th>Цена</th><th class="r">Сумма</th><th title="Гарантия, мес.">Гар., мес</th>${office ? '<th></th>' : ''}</tr></thead>
@@ -606,9 +626,9 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div><span class="muted">Скидка</span><span class="inline"><input type="number" id="disc" value="${o.discount_percent || 0}" min="0" max="100" step="any" style="width:70px;padding:3px 6px"> %  <span class="mono">−${rub(t.discount)}</span></span></div>
       <div class="big"><span>Итого</span><span class="mono">${rub(t.total)}</span></div>
       ${o.cashless_markup ? `<div class="small"><span class="muted">Безнал (+${o.cashless_markup}%)</span><span class="mono muted">${rub(t.total * (1 + o.cashless_markup / 100))}</span></div>` : ''}
-      <div><span class="muted">Оплачено</span><span class="mono">${rub(t.paid)}</span></div>
-      <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
-      <div style="margin-top:10px;gap:8px;justify-content:flex-end"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
+      ${isEst ? '' : `<div><span class="muted">Оплачено</span><span class="mono">${rub(t.paid)}</span></div>`}
+      <div style="font-weight:700;color:${t.due > 0.5 ? 'var(--warn)' : 'var(--ok)'};${isEst ? 'display:none' : ''}"><span>${t.due < -0.5 ? 'Переплата' : 'К оплате'}</span><span class="mono">${rub(Math.abs(t.due))}</span></div>
+      <div style="margin-top:10px;gap:8px;justify-content:flex-end;${isEst ? 'display:none' : ''}"><button type="button" class="sm" id="refund">Возврат</button><button type="button" class="primary" id="pay">Принять оплату</button></div>
     </div>
     ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}${p.acquiring ? `<div class="small">эквайринг −${rub(p.acquiring)} (наш расход)</div>` : ''}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
@@ -620,7 +640,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div class="field"><div>${esc([o.brand, o.model, o.year].filter(Boolean).join(' ') || '—')}</div>
       <div class="muted small">${o.plate ? 'Госномер ' + esc(o.plate) : ''}${o.vin ? ' · VIN ' + esc(o.vin) : ''}${o.color ? ' · ' + esc(o.color) : ''}</div></div>
     </div>
-    ${acceptCard(o, office)}
+    ${isEst ? '' : acceptCard(o, office)}
     <form class="card" id="of"><h2>Детали</h2>
       <div class="row"><div class="field"><label>Запись (начало)</label><input type="datetime-local" name="scheduled_at" value="${esc(o.scheduled_at || '')}" step="900" ${office ? '' : 'disabled'}></div>
       <div class="field"><label>На посту до</label><input type="date" name="end_date" value="${esc(o.end_date || '')}" ${office ? '' : 'disabled'}></div></div>
@@ -710,10 +730,17 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     },
   });
   autocomplete($('#addPrd', page), {
-    search: (q) => GET('/api/products' + qs({ q })).then((r) => r.slice(0, 15)),
-    render: (p) => `<div>${esc(p.name)} ${p.sku ? `<span class="s">${esc(p.sku)}</span>` : ''}</div><div class="s">${rub(p.price)} · на складе ${num(p.stock)} ${esc(p.unit)}</div>`,
-    onPick: (p) => productAddModal(o, p, contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner'), reload),
+    search: (q) => GET('/api/products' + qs({ q })).then((r) => [...r.slice(0, 15), ...(q ? [{ custom: true, name: q }] : [])]),
+    render: (p) => p.custom ? `+ Свой товар (нет в каталоге): <b>${esc(p.name)}</b>` : `<div>${esc(p.name)} ${p.sku ? `<span class="s">${esc(p.sku)}</span>` : ''}</div><div class="s">${rub(p.price)} · на складе ${num(p.stock)} ${esc(p.unit)}</div>`,
+    onPick: (p) => p.custom ? customProductModal(o, p.name, reload) : productAddModal(o, p, contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner'), reload, isEst),
   });
+  const ec = $('#estConvert', page);
+  if (ec) ec.onclick = async () => {
+    if (!(await confirmBox(`Перевести расчёт ${o.number} в заказ-наряд? Позиции и цены сохранятся${o.scheduled_at ? '' : ', дату записи назначите в «Деталях»'}.`, 'Оформить заказ-наряд'))) return;
+    try { await POST(`/api/orders/${o.id}/convert`); toast('Заказ-наряд ' + o.number + ' оформлен'); reload(); } catch (e) { toast(e.message, true); }
+  };
+  const ex = $('#estCancel', page);
+  if (ex) ex.onclick = async () => { if (await confirmBox('Отметить, что клиент отказался? Расчёт останется в списке со статусом «Отменён».', 'Да, отказался')) { await POST(`/api/orders/${o.id}/status`, { status: 'cancelled' }); reload(); } };
   const payModal = (refund) => modal(refund ? 'Возврат клиенту' : 'Принять оплату', `
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required value="${refund ? '' : Math.max(t.due, 0)}"></div>
     <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(refund ? { ...PAY_IN, transfer: 'С расчётного счёта' } : PAY_IN), 'cash')}</select></div></div>

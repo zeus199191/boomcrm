@@ -395,3 +395,7 @@ html.pwa, html.pwa body { overscroll-behavior: none; }
 html.pwa .nav a, html.pwa .tabbar a, html.pwa button, html.pwa .chip, html.pwa .mobilebar { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 html.pwa .side { padding-top: max(16px, env(safe-area-inset-top)); }
 @media (min-width: 861px) { html.pwa .main { padding-top: max(22px, env(safe-area-inset-top)); } }
+
+/* Предварительный расчёт */
+.st-estimate { background: rgba(167,139,250,.16); color: #c4b5fd; }
+.estcard { border-color: rgba(167,139,250,.45); background: linear-gradient(180deg, rgba(167,139,250,.08), transparent); }
