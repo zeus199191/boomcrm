@@ -1638,14 +1638,14 @@ async function loadReviewsCard(page) {
       <div class="field"><label>Всего отзывов</label><input name="twogis_count" type="number" min="0" value="${esc(d.twogis_count)}"></div></div>
       <button class="sm primary">Сохранить</button> <a class="btn sm ghost" href="/#reviews" target="_blank">Посмотреть на сайте</a></form>
     <div class="inline" style="margin:16px 0 8px"><h3 style="margin:0;flex:1">Отзывы (${d.reviews.length})</h3><button type="button" class="sm" id="rvAdd">+ Добавить отзыв</button></div>
-    ${d.reviews.length ? d.reviews.map((r) => `<div class="li" style="align-items:flex-start;${r.visible ? '' : 'opacity:.5'}"><div class="grow"><div class="t"><b>${esc(r.author)}</b> <span style="color:#f2a900">${star(r.rating)}</span> <span class="muted small">${r.date ? dmy(r.date) : ''} · ${esc(r.source || '')}${r.visible ? '' : ' · скрыт'}</span></div>
+    ${d.reviews.length ? d.reviews.map((r) => `<div class="li" style="align-items:flex-start;${r.visible ? '' : 'opacity:.5'}"><div class="grow"><div class="t"><b>${esc(r.author)}</b> ${r.rating ? `<span style="color:#f2a900">${star(r.rating)}</span>` : ''} <span class="muted small">${r.date ? dmy(r.date) : ''} · ${esc(r.source || '')}${r.visible ? '' : ' · скрыт'}</span></div>
       <div class="s" style="white-space:pre-line">${esc(r.text.length > 240 ? r.text.slice(0, 240) + '…' : r.text)}</div></div><button type="button" class="ghost sm" data-rve="${r.id}">✎</button><button type="button" class="ghost sm danger" data-rvd="${r.id}">✕</button></div>`).join('')
       : '<div class="muted small">Пока нет отзывов. Откройте карточку на 2ГИС, скопируйте имя, дату, оценку и текст отзыва и нажмите «+ Добавить отзыв».</div>'}`;
   $('#rvMeta', box).onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/site/reviews-meta', formData(e.target)); toast('Сохранено'); loadReviewsCard(page); } catch (err) { toast(err.message, true); } };
-  const edit = (r = { rating: 5, source: '2ГИС', visible: 1 }) => modal(r.id ? 'Отзыв' : 'Новый отзыв', `
+  const edit = (r = { rating: 0, source: '2ГИС', visible: 1 }) => modal(r.id ? 'Отзыв' : 'Новый отзыв', `
     <div class="row"><div class="field"><label>Имя автора (как на 2ГИС)</label><input name="author" value="${esc(r.author || '')}" required></div>
       <div class="field"><label>Дата отзыва</label><input type="date" name="date" value="${esc(r.date || '')}"></div>
-      <div class="field"><label>Оценка</label><select name="rating">${opts([5, 4, 3, 2, 1].map((n) => [n, star(n)]), r.rating)}</select></div></div>
+      <div class="field"><label>Оценка</label><select name="rating">${opts([[0, '— не указана —'], ...[5, 4, 3, 2, 1].map((n) => [n, star(n)])], r.rating ?? 0)}</select></div></div>
     <div class="field"><label>Текст отзыва</label><textarea name="text" rows="7" required>${esc(r.text || '')}</textarea></div>
     <div class="row"><div class="field"><label>Источник</label><input name="source" value="${esc(r.source || '2ГИС')}"></div>
       <div class="field"><label>&nbsp;</label><label class="inline" style="color:var(--text)"><input type="checkbox" name="visible" ${r.visible ? 'checked' : ''} style="width:auto"> Показывать на сайте</label></div></div>`,
