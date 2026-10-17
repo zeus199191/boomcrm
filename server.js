@@ -93,7 +93,12 @@ const server = http.createServer(async (req, res) => {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
       return send(res, 200, require('./lib/landing').render({ loggedIn: !!user }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     }
-    if (req.method === 'GET' && (pathname === '/crm' || pathname.startsWith('/crm/'))) return staticHandler(req, res, '/index.html');
+    if (req.method === 'GET' && (pathname === '/crm' || pathname.startsWith('/crm/'))) {
+      // версия в адресах скрипта и стилей — после обновления браузер (и иконка на iPhone) сразу берёт новые файлы, а не старые из кэша
+      const v = require('./package.json').version;
+      const html = require('node:fs').readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8').replace(/(src|href)="\/(app\.js|style\.css)"/g, `$1="/$2?v=${v}"`);
+      return send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    }
     if (req.method === 'GET' && pathname !== '/index.html' && staticHandler(req, res, pathname)) return;
     if (req.method === 'GET' && (pathname === '/index.html' || !path.extname(pathname))) { res.writeHead(302, { Location: '/crm' }); return res.end(); }
     throw new HttpError(404, 'Не найдено');
