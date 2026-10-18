@@ -346,7 +346,7 @@ route(/^\/$/, async (page) => {
   const stCounts = Object.fromEntries(d.by_status.map((x) => [x.status, x.n]));
   page.innerHTML = installHint() + `<div class="topbar"><div><h1>${d0.getHours() < 12 ? 'Доброе утро' : d0.getHours() < 18 ? 'Добрый день' : 'Добрый вечер'}, ${esc(S.me.user.name.split(' ')[0])}</h1>
     <div class="muted">${DOW[d0.getDay()]}, ${d0.getDate()} ${MONTHS[d0.getMonth()]}</div></div><div class="sp"></div>
-    ${isOffice() ? '<button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
+    ${isOffice() ? '<button id="voiceOrder" title="Записать клиента голосом">🎤 Голосом</button><button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
   ${d.money ? `<div class="grid g4" style="margin-bottom:14px">
     <div class="kpi"><div class="l">Касса сегодня</div><div class="v acc">${rub(d.money.today_in)}</div></div>
     <div class="kpi"><div class="l">Поступления за месяц</div><div class="v">${rub(d.money.month_in)}</div></div>
@@ -370,7 +370,52 @@ route(/^\/$/, async (page) => {
   const px = $('#pwaX', page); if (px) px.onclick = () => { try { localStorage.setItem('pwaHint', '1'); } catch {} $('#pwaHint', page).remove(); };
   page.addEventListener('click', (e) => { const li = e.target.closest('[data-o]'); if (li) go('/orders/' + li.dataset.o); });
   const nb = $('#newOrder', page); if (nb) nb.onclick = () => newOrderModal();
+  const vb = $('#voiceOrder', page); if (vb) vb.onclick = () => voiceOrderModal();
 });
+
+// ================= Запись голосом =================
+// Фраза вида «Алексей, Тойота Филдер 2017, установка сигнализации StarLine E97 на 3 ноября в 11» → заполненная форма заказа
+function voiceOrderModal() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const m = modal('🎤 Запись голосом', `<div class="small muted" style="margin-bottom:8px">Скажите: <i>«Алексей, Тойота Филдер 2017 год, установка сигнализации StarLine E97 на 3 ноября в 11 часов»</i>. Можно добавить телефон. Потом проверите всё в форме заказа.</div>
+    ${SR ? '<div style="text-align:center;margin:8px 0 12px"><button type="button" class="primary" id="micBtn" style="font-size:18px;padding:14px 26px;border-radius:40px">🎤 Говорить</button><div class="small muted" id="micSt" style="margin-top:6px">Нажмите и говорите</div></div>'
+      : '<div class="small" style="margin-bottom:8px">Браузер не поддерживает распознавание речи — нажмите 🎤 на клавиатуре телефона и надиктуйте фразу в поле ниже (или откройте CRM в Chrome).</div>'}
+    <div class="field"><label>Текст записи (можно поправить)</label><textarea name="text" rows="4" id="vText" placeholder="Имя, машина, год, услуга, оборудование, дата и время"></textarea></div>`,
+  { submit: 'Разобрать и заполнить заказ', onSubmit: async (d) => {
+    if (!String(d.text || '').trim()) { toast('Скажите или напишите фразу', true); return false; }
+    stop();
+    const p = await POST('/api/voice/parse', { text: d.text });
+    const c = p.client || {}, car = p.car || {};
+    const items = [p.service && { kind: 'service', ref_id: p.service.id, name: p.service.name, price: p.service.price }, p.product && { kind: 'product', ref_id: p.product.id, name: p.product.name, price: p.product.price }].filter(Boolean);
+    const pre = { scheduled_at: p.scheduled_at || '', car_brand: car.brand || '', car_model: car.model || '', car_year: car.year || '', items,
+      complaint: [p.service && p.service.name, p.product && p.product.name].filter(Boolean).join(', ') || p.text,
+      duration_h: p.service && p.service.duration_min ? Math.max(0.5, Math.round(p.service.duration_min / 30) / 2) : 2 };
+    if (c.id) Object.assign(pre, { client_id: c.id, client_name: c.name + (c.phone ? ' · ' + c.phone : ''), car_id: car.id || '', new_car: !car.id && !!(car.brand || car.model) });
+    else if (c.matches && c.matches.length) pre.client_name = c.name || '';
+    else Object.assign(pre, { name: c.name || '', phone: c.phone || '' });
+    m.close();
+    newOrderModal(pre);
+    if (c.matches && c.matches.length) toast(`Клиентов «${c.name}» в базе несколько (${c.matches.length}) — выберите нужного в поиске или создайте нового`);
+    else if (p.notes && p.notes.length) toast(p.notes.join('. '));
+    else toast(c.id ? 'Клиент найден в базе: ' + c.name : 'Новый клиент — проверьте данные');
+    return false;
+  } });
+  let rec = null, on = false, base = '';
+  const ta = $('#vText', m.el), btn = $('#micBtn', m.el), st = $('#micSt', m.el);
+  function stop() { if (rec && on) { try { rec.stop(); } catch {} } }
+  if (!SR) { ta.focus(); return; }
+  btn.onclick = () => {
+    if (on) return stop();
+    rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = true;
+    base = ta.value ? ta.value.trim() + ' ' : '';
+    rec.onresult = (e) => { if (!ta.isConnected) return stop(); let fin = '', tmp = ''; for (let i = 0; i < e.results.length; i++) (e.results[i].isFinal ? (fin += e.results[i][0].transcript) : (tmp += e.results[i][0].transcript)); ta.value = (base + fin + tmp).replace(/\s+/g, ' '); };
+    rec.onstart = () => { on = true; btn.textContent = '⏹ Стоп'; st.textContent = 'Слушаю…'; };
+    rec.onend = () => { on = false; btn.textContent = '🎤 Говорить'; st.textContent = ta.value ? 'Готово — проверьте текст и нажмите «Разобрать»' : 'Нажмите и говорите'; };
+    rec.onerror = (e) => { st.textContent = e.error === 'not-allowed' ? 'Нет доступа к микрофону — разрешите его в браузере' : e.error === 'no-speech' ? 'Ничего не услышал, попробуйте ещё раз' : 'Ошибка распознавания: ' + e.error; };
+    try { rec.start(); } catch (e) { st.textContent = 'Не удалось включить микрофон'; }
+  };
+  const close0 = m.close; m.close = () => { stop(); close0(); };
+}
 
 // ================= Новый заказ =================
 async function newOrderModal(pre = {}) {
@@ -390,14 +435,15 @@ async function newOrderModal(pre = {}) {
     <div class="field" id="carRow"><label>Автомобиль</label><select name="car_id" id="carSel"><option value="">— новый автомобиль —</option></select></div>
     <div class="row" id="newCar"><div class="field"><label>Марка</label><input name="car_brand" value="${esc(pre.car_brand || '')}"></div>
       <div class="field"><label>Модель</label><input name="car_model" value="${esc(pre.car_model || '')}"></div>
-      <div class="field"><label>Госномер</label><input name="car_plate"></div><div class="field"><label>Год</label><input name="car_year" type="number" min="1950" max="2100"></div></div>
+      <div class="field"><label>Госномер</label><input name="car_plate"></div><div class="field"><label>Год</label><input name="car_year" type="number" min="1950" max="2100" value="${esc(pre.car_year || '')}"></div></div>
     <div class="row">
       <div class="field"><label>Дата и время записи</label><input type="datetime-local" name="scheduled_at" value="${esc(pre.scheduled_at || '')}" step="900"></div>
       <div class="field"><label>Стоит на посту до (включительно)</label><input type="date" name="end_date" value="${esc(pre.end_date || '')}"></div>
       <div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${pre.duration_h || 2}" step="0.5" min="0.5"></div>
       <div class="field"><label>Пост</label><select name="bay">${opts(bays, pre.bay, '—')}</select></div>
       <div class="field"><label>Мастер</label><select name="master_id">${masterOpts(pre.master_id)}</select></div></div>
-    <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>`,
+    <div class="field"><label>Что хочет клиент</label><textarea name="complaint" placeholder="Например: замена штатной акустики, шумоизоляция дверей, сабвуфер в багажник">${esc(pre.complaint || '')}</textarea></div>
+    ${(pre.items || []).length ? `<div class="field"><label>Добавить в заказ</label>${pre.items.map((it, i) => `<label class="chk" style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" name="it_${i}" checked> ${it.kind === 'product' ? '📦' : '🔧'} ${esc(it.name)} <span class="muted">— ${rub(it.price)}</span></label>`).join('')}</div>` : ''}`,
   { wide: true, submit: est ? 'Создать расчёт' : 'Создать заказ', onSubmit: async (d) => {
     if (!est && d.scheduled_at && isDayOff(d.scheduled_at) && !(await confirmBox(`${dmy(d.scheduled_at)} — выходной день. Записать в виде исключения?`, 'Да, записать'))) return false;
     const body = { client_id: d.client_id || null, lead_id: d.lead_id || null, car_id: d.car_id || null, scheduled_at: d.scheduled_at || null, end_date: d.end_date || null,
@@ -407,6 +453,7 @@ async function newOrderModal(pre = {}) {
       body.new_client = { name: d.nc_name, phone: d.nc_phone, source: d.nc_source };
     }
     if (!body.car_id) body.new_car = { brand: d.car_brand, model: d.car_model, plate: d.car_plate, year: d.car_year };
+    body.items = (pre.items || []).filter((it, i) => d['it_' + i]).map((it) => ({ kind: it.kind, ref_id: it.ref_id }));
     const r = await POST('/api/orders', body);
     toast((est ? 'Расчёт ' : 'Заказ ') + orderNo(r.id) + ' создан');
     go('/orders/' + r.id);
@@ -426,7 +473,7 @@ async function newOrderModal(pre = {}) {
     if (clientId) {
       const c = await GET('/api/clients/' + clientId);
       sel.innerHTML += c.cars.map((x) => `<option value="${x.id}">${esc(carStr(x))}</option>`).join('');
-      if (carId) sel.value = carId; else if (c.cars.length) sel.value = c.cars[c.cars.length - 1].id;
+      if (carId) sel.value = carId; else if (c.cars.length && !pre.new_car) sel.value = c.cars[c.cars.length - 1].id;
     }
     toggleCar();
   }
@@ -444,7 +491,7 @@ route(/^\/orders$/, async (page, query) => {
   const st = query.status || 'active';
   page.innerHTML = `<div class="topbar"><h1>Заказ-наряды</h1><div class="sp"></div>
     <input class="search" id="q" placeholder="Поиск: №, клиент, телефон, госномер" value="${esc(query.q || '')}">
-    ${isOffice() ? '<button id="newEst">+ Расчёт</button><button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
+    ${isOffice() ? '<button id="voiceOrder" title="Записать клиента голосом">🎤 Голосом</button><button id="newEst">+ Расчёт</button><button class="primary" id="newOrder">+ Новый заказ</button>' : ''}</div>
     <div class="chips" style="margin-bottom:12px">${[['active', 'Активные'], ...(isOffice() ? [['estimate', 'Расчёты']] : []), ...Object.entries(S.me.statuses).filter(([k]) => k !== 'estimate'), ['', 'Все']].map(([k, t]) => `<button class="chip ${k === st ? 'on' : ''}" data-st="${k}">${t}</button>`).join('')}</div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
   let cur = st;
@@ -461,6 +508,7 @@ route(/^\/orders$/, async (page, query) => {
   $('#q', page).oninput = debounce(load, 300);
   $('#list', page).onclick = (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) go('/orders/' + tr.dataset.id); };
   const nb = $('#newOrder', page); if (nb) nb.onclick = () => newOrderModal();
+  const vb = $('#voiceOrder', page); if (vb) vb.onclick = () => voiceOrderModal();
   const ne = $('#newEst', page); if (ne) ne.onclick = () => newOrderModal({ estimate: true });
   await load();
 });
