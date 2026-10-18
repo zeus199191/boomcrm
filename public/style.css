@@ -405,3 +405,8 @@ html.pwa .side { padding-top: max(16px, env(safe-area-inset-top)); }
 .saby-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)}
 .saby-row.pending{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--card))}
 .saby-row.paid{border-color:var(--ok)}
+
+/* «В долг» в заказ-наряде */
+.debtchk{display:flex;gap:10px;align-items:flex-start;margin:2px 0 12px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--text)}
+.debtchk input{width:18px;height:18px;flex:none;margin-top:2px}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline dotted}
