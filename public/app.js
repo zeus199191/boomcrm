@@ -1899,6 +1899,8 @@ async function mkTools(box) {
       <div class="field"><label>Раздел сайта</label><select id="ua">${opts([['', 'Главная'], ['#alarms', 'Сигнализации'], ['#services', 'Услуги'], ['#order', 'Форма заявки'], ['#reviews', 'Отзывы']], '')}</select></div>
       <div class="field"><label>Готовая ссылка</label><div class="inline"><input id="uo" readonly><button type="button" class="sm" id="ucp">Копировать</button></div></div>
       <div id="qr" style="margin-top:8px"></div></div>
+    ${S.me.social && (S.me.social.tg || S.me.social.vk || S.me.social.max) ? `<div class="card"><h2>Ссылки на соцсети для постов и визиток</h2><div class="small muted" style="margin-bottom:8px">Вставляйте в подписи постов, сообщения клиентам и печать (QR-код сделает любой генератор).</div>
+      ${[['Telegram', S.me.social.tg], ['ВКонтакте', S.me.social.vk], ['MAX', S.me.social.max], ['Авито', S.me.social.avito]].filter((x) => x[1]).map(([n, u]) => `<div class="mk-tpl inline" style="justify-content:space-between;gap:8px"><span><b>${n}</b> <span class="small muted" style="word-break:break-all">${esc(u)}</span></span><button type="button" class="sm" data-scp="${esc(u)}">Копировать</button></div>`).join('')}</div>` : ''}
     <div class="card"><h2>Шаблоны сообщений</h2>${MK_TEMPLATES.map(([n, t], i) => `<div class="mk-tpl"><div class="inline" style="justify-content:space-between"><b>${esc(n)}</b><button type="button" class="sm" data-tcp="${i}">Копировать</button></div><div class="small muted">${esc(t)}</div></div>`).join('')}</div>
     <div class="card"><h2>Где ещё взять клиентов</h2><ul class="mk-list">
       <li><b>2ГИС и Яндекс Карты</b> — фото работ раз в неделю, ответы на все отзывы, актуальные часы работы.</li>
@@ -1908,14 +1910,15 @@ async function mkTools(box) {
       <li><b>Повторные продажи</b> — база «Без сигнализации» перед зимой, «Давно не были» раз в квартал.</li>
       <li><b>Сарафан</b> — после каждой выдачи просите отзыв (вкладка «Отзывы»).</li></ul></div>
     <div class="card"><h2>Быстрые ссылки</h2><div class="inline" style="flex-wrap:wrap;gap:8px">
-      <a class="btn sm" href="/" target="_blank">🌐 Сайт</a><a class="btn sm" href="#/leads">📥 Заявки</a><a class="btn sm" href="#/settings">⭐ Отзывы на сайте</a><a class="btn sm" href="#/stock">🏷 Склад (товары на сайте)</a>
-      <a class="btn sm" href="https://2gis.ru" target="_blank" rel="noopener">2ГИС</a><a class="btn sm" href="https://yandex.ru/sprav" target="_blank" rel="noopener">Яндекс Бизнес</a><a class="btn sm" href="https://www.avito.ru/profile" target="_blank" rel="noopener">Авито</a><a class="btn sm" href="https://vk.com/ads" target="_blank" rel="noopener">VK Реклама</a></div></div>
+      <a class="btn sm" href="/" target="_blank">🌐 Сайт</a>${S.me.social?.tg ? `<a class="btn sm" href="${esc(S.me.social.tg)}" target="_blank" rel="noopener">✈️ Наш Telegram</a>` : ''}${S.me.social?.vk ? `<a class="btn sm" href="${esc(S.me.social.vk)}" target="_blank" rel="noopener">ВК группа</a>` : ''}${S.me.social?.max ? `<a class="btn sm" href="${esc(S.me.social.max)}" target="_blank" rel="noopener">💬 Наш MAX</a>` : ''}${S.me.social?.avito ? `<a class="btn sm" href="${esc(S.me.social.avito)}" target="_blank" rel="noopener">🏷 Наш Авито</a>` : ''}<a class="btn sm" href="#/leads">📥 Заявки</a><a class="btn sm" href="#/settings">⭐ Отзывы на сайте</a><a class="btn sm" href="#/stock">🏷 Склад (товары на сайте)</a>
+      <a class="btn sm" href="https://2gis.ru" target="_blank" rel="noopener">2ГИС</a><a class="btn sm" href="https://yandex.ru/sprav" target="_blank" rel="noopener">Яндекс Бизнес</a><a class="btn sm" href="https://www.avito.ru/profile" target="_blank" rel="noopener">Авито (кабинет)</a><a class="btn sm" href="https://vk.com/ads" target="_blank" rel="noopener">VK Реклама</a></div></div>
   </div>`;
   const upd = () => { const u = new URL(site); if ($('#us', box).value.trim()) u.searchParams.set('utm_source', $('#us', box).value.trim()); if ($('#uc', box).value.trim()) u.searchParams.set('utm_campaign', $('#uc', box).value.trim());
     const link = u.toString() + $('#ua', box).value; $('#uo', box).value = link; };
   ['#us', '#uc', '#ua'].forEach((s) => ['input', 'change'].forEach((ev) => $(s, box).addEventListener(ev, upd))); upd();
   $('#ucp', box).onclick = () => copyText($('#uo', box).value, 'Ссылка скопирована');
   $$('[data-tcp]', box).forEach((b) => (b.onclick = () => copyText(fillTpl(MK_TEMPLATES[+b.dataset.tcp][1], {}), 'Шаблон скопирован')));
+  $$('[data-scp]', box).forEach((b) => (b.onclick = () => copyText(b.dataset.scp, 'Ссылка скопирована')));
 }
 
 // карточка онлайн-кассы Saby (Нева-01-Ф + терминал Альфа-Банка) в Настройках
@@ -2274,7 +2277,12 @@ route(/^\/settings$/, async (page, query = {}) => {
       <div class="field"><label>Подзаголовок</label><input name="company_subtitle" value="${esc(s.company_subtitle)}"></div>
       <div class="field"><label>Адрес</label><input name="company_address" value="${esc(s.company_address)}"></div>
       <div class="row"><div class="field"><label>Телефон</label><input name="company_phone" value="${esc(s.company_phone)}"></div><div class="field"><label>ИНН</label><input name="company_inn" value="${esc(s.company_inn)}"></div></div>
-      <div class="field"><label>Реквизиты для документов (ИП/ООО, ОГРН, р/с)</label><textarea name="company_requisites">${esc(s.company_requisites)}</textarea></div></div>
+      <div class="field"><label>Реквизиты для документов (ИП/ООО, ОГРН, р/с)</label><textarea name="company_requisites">${esc(s.company_requisites)}</textarea></div>
+      <div class="row"><div class="field"><label>Telegram-канал</label><input name="social_tg" value="${esc(s.social_tg || '')}" placeholder="https://t.me/…"></div>
+        <div class="field"><label>Группа ВКонтакте</label><input name="social_vk" value="${esc(s.social_vk || '')}" placeholder="https://vk.ru/…"></div>
+        <div class="field"><label>Канал MAX</label><input name="social_max" value="${esc(s.social_max || '')}" placeholder="https://max.ru/…"></div>
+        <div class="field"><label>Профиль Авито</label><input name="social_avito" value="${esc(s.social_avito || '')}" placeholder="https://www.avito.ru/…"></div></div>
+      <div class="small muted">Соцсети показываются на сайте (контакты и подвал) и в «Маркетинге».</div></div>
     <div class="card"><h2>Запись</h2>
       <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
       <div class="field"><label>Сайт ателье на главной странице</label><select name="landing_on"><option value="1" ${s.landing_on !== '0' ? 'selected' : ''}>Включён — по адресу сервера открывается сайт, CRM — по кнопке «Вход» (/crm)</option><option value="0" ${s.landing_on === '0' ? 'selected' : ''}>Выключен — сразу открывается CRM</option></select></div>
