@@ -1724,6 +1724,8 @@ const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
 const fillTpl = (t, c) => t.replace(/\{имя\}/g, (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
   .replace(/\{2гис\}/g, c.twogis || '').replace(/\{телефон\}/g, S.me.company_phone || '');
 const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '').replace(/^8/, '7'); return d.length >= 10 ? `https://wa.me/${d.length === 10 ? '7' + d : d}?text=${encodeURIComponent(text)}` : ''; };
+// MAX: ссылка «поделиться» открывает приложение с готовым текстом — остаётся выбрать клиента (по номеру ищется в поиске MAX)
+const maxLink = (text) => 'https://max.ru/:share?text=' + encodeURIComponent(text);
 const copyText = async (t, msg = 'Скопировано') => { try { await navigator.clipboard.writeText(t); toast(msg); } catch { prompt('Скопируйте текст:', t); } };
 
 route(/^\/marketing$/, async (page, query) => {
@@ -1855,11 +1857,11 @@ async function mkBase(box, query) {
     <div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>Клиентов: ${rows.length}</b><span class="sp"></span>
       <button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
       <div class="field"><label>Текст рассылки</label><select id="tpl">${MK_TEMPLATES.map(([n], i) => `<option value="${i}" ${i === tplIdx ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
-        <textarea id="tplText" rows="3" style="margin-top:6px">${esc(MK_TEMPLATES[tplIdx][1])}</textarea><div class="small muted">{имя}, {авто}, {телефон} подставятся сами. Кнопка WhatsApp откроет чат с готовым текстом.</div></div>
+        <textarea id="tplText" rows="3" style="margin-top:6px">${esc(MK_TEMPLATES[tplIdx][1])}</textarea><div class="small muted">{имя}, {авто}, {телефон} подставятся сами. MAX откроется с готовым текстом — выберите клиента (номер скопируется для поиска); WhatsApp откроет чат сразу.</div></div>
       <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Последний визит</th><th class="r">Визитов</th><th class="r">Потратил</th><th></th></tr></thead><tbody>
       ${rows.slice(0, 300).map((c, i) => `<tr><td data-l="Клиент"><a href="#/clients/${c.id}">${esc(c.name)}</a>${c.days_to !== undefined ? ` <span class="badge warn">ДР через ${c.days_to} дн.</span>` : ''}</td><td data-l="Телефон"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
         <td data-l="Авто" class="muted">${esc(c.cars || '')}</td><td data-l="Визит">${c.last_visit ? dmy(c.last_visit) : '—'}</td><td data-l="Визитов" class="r">${c.visits || 0}</td><td data-l="Потратил" class="r mono">${c.spent ? rub(c.spent) : '—'}</td>
-        <td><button type="button" class="sm" data-wa="${i}">WhatsApp</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">В этом сегменте пока никого</td></tr>'}</tbody></table></div>
+        <td class="nowrap"><button type="button" class="sm" data-mx="${i}">MAX</button> <button type="button" class="sm ghost" data-wa="${i}">WhatsApp</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">В этом сегменте пока никого</td></tr>'}</tbody></table></div>
       ${rows.length > 300 ? '<div class="small muted">Показаны первые 300 — полный список в CSV.</div>' : ''}</div>`;
   const mon = $('#mon', box); if (mon) mon.onchange = () => go('/marketing' + qs({ tab: 'base', type, months: mon.value }));
   $('#tpl', box).onchange = (e) => { $('#tplText', box).value = MK_TEMPLATES[+e.target.value][1]; };
@@ -1869,6 +1871,8 @@ async function mkBase(box, query) {
     const csv = '﻿' + [['Имя', 'Телефон', 'Авто', 'Последний визит', 'Визитов', 'Потратил', 'Откуда узнал'].join(';'), ...rows.map((c) => [c.name, c.phone, c.cars, c.last_visit ? dmy(c.last_visit) : '', c.visits, c.spent || 0, c.source].map(q).join(';'))].join('\r\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `клиенты-${type}-${today()}.csv`; a.click();
   };
+  $$('[data-mx]', box).forEach((b) => (b.onclick = async () => { const c = rows[+b.dataset.mx]; try { await navigator.clipboard.writeText(c.phone || ''); } catch {}
+    window.open(maxLink(fillTpl($('#tplText', box).value, { name: c.name, car: (c.cars || '').split(',')[0] })), '_blank'); toast(`Выберите в MAX клиента ${c.name} — номер скопирован для поиска`); }));
   $$('[data-wa]', box).forEach((b) => (b.onclick = () => { const c = rows[+b.dataset.wa]; const url = waLink(c.phone, fillTpl($('#tplText', box).value, { name: c.name, car: (c.cars || '').split(',')[0] }));
     if (url) window.open(url, '_blank'); else toast('У клиента некорректный телефон', true); }));
 }
@@ -1876,16 +1880,18 @@ async function mkBase(box, query) {
 async function mkReviews(box) {
   const d = await GET('/api/mk/reviews');
   const tpl = MK_TEMPLATES[0][1];
-  box.innerHTML = `<div class="card"><h2>Попросить отзыв</h2><div class="small muted" style="margin-bottom:10px">Заказы, выданные за последние 45 дней. Лучшее время попросить отзыв — через 1–3 дня после выдачи. Каждый отзыв в 2ГИС поднимает карточку в поиске.
+  box.innerHTML = `<div class="card"><h2>Попросить отзыв</h2><div class="small muted" style="margin-bottom:10px">Заказы, выданные за последние 45 дней. Лучшее время попросить отзыв — через 1–3 дня после выдачи. Каждый отзыв в 2ГИС поднимает карточку в поиске.<br>«Написать в MAX» откроет MAX с готовым текстом — выберите клиента (номер скопируется, вставьте его в поиск MAX).
       ${d.twogis_url ? '' : '<br><b style="color:var(--warn)">Ссылка на 2ГИС не указана — добавьте её в Настройках → «Отзывы на сайте».</b>'}</div>
       <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Выдан</th><th>Клиент</th><th>Авто и работы</th><th>Статус</th><th></th></tr></thead><tbody>
       ${d.orders.map((o, i) => `<tr style="${o.review_asked_at ? 'opacity:.6' : ''}"><td data-l="Выдан">${dmy(o.issued)}</td><td data-l="Клиент"><b>${esc(o.name || '—')}</b><div class="small"><a href="tel:${esc(o.phone || '')}">${esc(o.phone || '')}</a></div></td>
         <td data-l="Работы" class="small">${esc([o.brand, o.model].filter(Boolean).join(' '))}<div class="muted">${esc(o.works || '')}</div></td>
         <td data-l="Статус">${o.review_asked_at ? `<span class="badge ok">попросили ${dmy(o.review_asked_at)}</span>` : '<span class="badge warn">не просили</span>'}</td>
-        <td class="nowrap"><button type="button" class="sm" data-rwa="${i}">WhatsApp</button> <button type="button" class="sm" data-rcp="${i}">Текст</button> <button type="button" class="sm ghost" data-rmk="${i}">${o.review_asked_at ? 'Снять отметку' : 'Отметить'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет выданных заказов за 45 дней</td></tr>'}</tbody></table></div></div>`;
+        <td class="nowrap"><button type="button" class="sm" data-rwa="${i}">💬 Написать в MAX</button> <button type="button" class="sm" data-rcp="${i}">Текст</button> <button type="button" class="sm ghost" data-rmk="${i}">${o.review_asked_at ? 'Снять отметку' : 'Отметить'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет выданных заказов за 45 дней</td></tr>'}</tbody></table></div></div>`;
   const text = (o) => fillTpl(tpl, { name: o.name, twogis: d.twogis_url });
   const mark = async (o, undo) => { await POST('/api/mk/reviews/' + o.id, { undo }); };
-  $$('[data-rwa]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rwa]; const u = waLink(o.phone, text(o)); if (!u) return toast('Некорректный телефон', true); window.open(u, '_blank'); await mark(o); mkReviews(box); }));
+  $$('[data-rwa]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rwa];
+    try { await navigator.clipboard.writeText(o.phone || ''); } catch {}
+    window.open(maxLink(text(o)), '_blank'); toast(`MAX: выберите клиента ${o.name || ''} — его номер ${o.phone || ''} скопирован для поиска`); await mark(o); mkReviews(box); }));
   $$('[data-rcp]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rcp]; await copyText(text(o), 'Текст скопирован — отправьте клиенту'); await mark(o); mkReviews(box); }));
   $$('[data-rmk]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rmk]; await mark(o, !!o.review_asked_at); mkReviews(box); }));
 }
