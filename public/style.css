@@ -456,3 +456,10 @@ i.rv { background: var(--accent); } i.ld { background: #4ea1ff; }
 
 /* SMS */
 .sms-tpl { margin-bottom: 10px; } .sms-tpl textarea { margin-top: 4px; }
+
+/* логотипы брендов (Настройки) */
+.brand-adm { display: grid; gap: 6px; }
+.ba { display: grid; grid-template-columns: 110px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.ba .bl { height: 40px; display: grid; place-items: center; background: #e9eef2; border-radius: 8px; padding: 4px 8px; }
+.ba .bl img { max-width: 100%; max-height: 32px; filter: brightness(0); opacity: .85; }
+.ba .bn b { display: block; } 

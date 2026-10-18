@@ -1716,6 +1716,22 @@ async function mkSms(box) {
   $$('[data-smsx]', box).forEach((b) => (b.onclick = async () => { await POST('/api/sms/cancel', { id: +b.dataset.smsx }); re(); }));
   $$('[data-smsr]', box).forEach((b) => (b.onclick = async () => { await POST('/api/sms/retry', { id: +b.dataset.smsr }); re(); }));
 }
+async function loadBrandsCard(page) {
+  const box = $('#brandsCard', page); if (!box) return;
+  let list; try { list = await GET('/api/site/brands'); } catch { box.remove(); return; }
+  box.innerHTML = `<h2>Логотипы брендов на сайте</h2><div class="small muted" style="margin-bottom:10px">Страница «Автозвук». Лучше всего SVG или PNG с прозрачным фоном. На сайте логотипы показываются в одном тёмном цвете, поэтому цвет исходника не важен. Без логотипа выводится название текстом.</div>
+    <div class="brand-adm">${list.map((b) => `<div class="ba"><div class="bl">${b.logo ? `<img src="${esc(b.logo)}" alt="">` : '<span class="muted small">нет логотипа</span>'}</div>
+      <div class="bn"><b>${esc(b.name)}</b><span class="muted small">${b.main ? esc(b.country) : 'а также'}</span></div>
+      <div class="inline" style="gap:6px"><button type="button" class="sm" data-bup="${b.slug}">${b.has_file ? 'Заменить' : 'Загрузить'}</button>${b.has_file ? `<button type="button" class="sm ghost danger" data-bdel="${b.slug}" title="Убрать логотип">✕</button>` : ''}</div></div>`).join('')}</div>`;
+  $$('[data-bup]', box).forEach((btn) => (btn.onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.svg,.png,.webp,.jpg,.jpeg,image/*';
+    inp.onchange = async () => { const f = inp.files[0]; if (!f) return; if (f.size > 2 * 1024 * 1024) return toast('Файл больше 2 МБ', true);
+      const data = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(f); });
+      try { await POST(`/api/site/brands/${btn.dataset.bup}/logo`, { data }); toast('Логотип загружен'); loadBrandsCard(page); } catch (e) { toast(e.message, true); } };
+    inp.click();
+  }));
+  $$('[data-bdel]', box).forEach((btn) => (btn.onclick = async () => { if (await confirmBox('Убрать логотип? На сайте останется название текстом.', 'Убрать')) { await DEL(`/api/site/brands/${btn.dataset.bdel}/logo`); loadBrandsCard(page); } }));
+}
 async function loadSmsCard(page) {
   const box = $('#smsCard', page); if (!box) return;
   let a; try { a = await GET('/api/sms'); } catch { box.remove(); return; }
@@ -2450,6 +2466,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="smsCard"><h2>SMS-рассылка</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="brandsCard"><h2>Логотипы брендов на сайте</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="revCard"><h2>Отзывы на сайте</h2><div class="muted">Загрузка…</div></div>
     <div class="card"><h2>Импорт журнала из Excel</h2>
       <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
@@ -2469,6 +2486,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   loadAlfaCard(page, query);
   loadSabyCard(page);
   loadSmsCard(page);
+  loadBrandsCard(page);
   loadReviewsCard(page);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
