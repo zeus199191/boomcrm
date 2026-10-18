@@ -927,7 +927,8 @@ function clientModal(c = {}) {
     <div class="row"><div class="field"><label>Дата рождения</label><input name="birthday" type="date" value="${esc(c.birthday || '')}"></div>
     <div class="field"><label>Постоянная скидка, %</label><input name="discount" type="number" min="0" max="100" step="any" value="${c.discount || 0}"></div></div>
     ${isNew ? `<h3>Автомобиль</h3><div class="row"><div class="field"><label>Марка</label><input name="car_brand"></div><div class="field"><label>Модель</label><input name="car_model"></div><div class="field"><label>Госномер</label><input name="car_plate"></div></div>` : ''}
-    <div class="field"><label>Заметки</label><textarea name="notes">${esc(c.notes || '')}</textarea></div>`,
+    <div class="field"><label>Заметки</label><textarea name="notes">${esc(c.notes || '')}</textarea></div>
+    ${isNew ? '' : `<label class="inline" style="color:var(--text)"><input type="checkbox" name="no_sms" ${c.no_sms ? 'checked' : ''}> Не отправлять SMS — клиент отказался от рассылки</label>`}`,
   { onSubmit: async (d) => {
     if (isNew) {
       d.car = { brand: d.car_brand, model: d.car_model, plate: d.car_plate };
@@ -938,7 +939,7 @@ function clientModal(c = {}) {
         else throw e;
       }
       toast('Клиент добавлен'); go('/clients/' + r.id);
-    } else { await PUT('/api/clients/' + c.id, d); toast('Сохранено'); navigate(); }
+    } else { await PUT('/api/clients/' + c.id, d); if (!!d.no_sms !== !!c.no_sms) await POST(`/api/clients/${c.id}/no-sms`, { on: !!d.no_sms }); toast('Сохранено'); navigate(); }
   } });
 }
 
@@ -1694,6 +1695,61 @@ async function loadReviewsCard(page) {
   $$('[data-rvd]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить отзыв с сайта?', 'Удалить')) { await DEL('/api/site/reviews/' + b.dataset.rvd); loadReviewsCard(page); } }));
 }
 
+// ---------- SMS ----------
+const smsParts = (t) => { const s = String(t || ''); const uni = /[^\x00-\x7F]/.test(s); const n = s.length; return n <= (uni ? 70 : 160) ? 1 : Math.ceil(n / (uni ? 67 : 153)); };
+const fillTplSms = (t, c) => fillTpl(t, c).replace(/Здравствуйте, добрый день!/g, 'Здравствуйте!');
+const SMS_ST = { queued: ['в очереди', 'warn'], sent: ['отправлено', 'ok'], error: ['ошибка', 'red'], cancelled: ['отменено', ''] };
+const SMS_KIND = { remind: 'Напоминание о записи', ready: 'Машина готова', review: 'Просьба об отзыве', bulk: 'Рассылка', manual: 'Вручную', test: 'Проверка' };
+async function mkSms(box) {
+  const d = await GET('/api/sms/queue');
+  box.innerHTML = `<div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px"><b>Сегодня отправлено: ${d.stats.today || 0}</b><span class="muted">· в очереди ${d.stats.queued || 0} · ошибок за неделю ${d.stats.errors || 0}</span><span class="sp"></span>
+      ${d.stats.errors ? '<button class="sm" id="smsRetry">↻ Повторить ошибки</button>' : ''}${d.stats.queued ? '<button class="sm ghost danger" id="smsStop">⏹ Остановить очередь</button>' : ''}<a class="btn sm" href="#/settings">⚙ Настройки SMS</a></div>
+      ${S.me.sms_on ? '' : '<div class="small" style="margin-top:8px;color:var(--warn)">SMS не подключены — Настройки → «SMS-рассылка».</div>'}</div>
+    <div class="card"><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Когда</th><th>Кому</th><th>Тип</th><th>Текст</th><th>Статус</th><th></th></tr></thead><tbody>
+    ${d.rows.map((m) => `<tr><td data-l="Когда" class="nowrap">${dt(m.sent_at || m.created_at)}</td><td data-l="Кому" class="nowrap">${esc(m.client || '')}<div class="small muted">${esc(m.phone)}</div></td>
+      <td data-l="Тип" class="small">${SMS_KIND[m.kind] || esc(m.kind)}</td><td data-l="Текст" class="small muted" style="max-width:380px">${esc(m.text)}</td>
+      <td data-l="Статус"><span class="badge ${SMS_ST[m.status]?.[1] || ''}">${SMS_ST[m.status]?.[0] || esc(m.status)}</span>${m.error ? `<div class="small" style="color:var(--bad)">${esc(m.error)}</div>` : ''}</td>
+      <td>${m.status === 'queued' ? `<button class="sm ghost" data-smsx="${m.id}">✕</button>` : m.status === 'error' ? `<button class="sm ghost" data-smsr="${m.id}">↻</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Сообщений пока не было</td></tr>'}</tbody></table></div></div>`;
+  const re = () => mkSms(box);
+  const st = $('#smsStop', box); if (st) st.onclick = async () => { if (await confirmBox('Отменить все сообщения в очереди?', 'Отменить')) { const r = await POST('/api/sms/cancel', {}); toast('Отменено: ' + r.cancelled); re(); } };
+  const rt = $('#smsRetry', box); if (rt) rt.onclick = async () => { const r = await POST('/api/sms/retry', {}); toast('Снова в очереди: ' + r.n); re(); };
+  $$('[data-smsx]', box).forEach((b) => (b.onclick = async () => { await POST('/api/sms/cancel', { id: +b.dataset.smsx }); re(); }));
+  $$('[data-smsr]', box).forEach((b) => (b.onclick = async () => { await POST('/api/sms/retry', { id: +b.dataset.smsr }); re(); }));
+}
+async function loadSmsCard(page) {
+  const box = $('#smsCard', page); if (!box) return;
+  let a; try { a = await GET('/api/sms'); } catch { box.remove(); return; }
+  const prov = a.sms_provider || 'gate';
+  const tpl = (k, t, on) => `<div class="sms-tpl"><label class="inline" style="color:var(--text)"><input type="checkbox" name="${on}" ${a[on] === '1' ? 'checked' : ''}> <b>${t}</b></label>
+    <textarea name="${k}" rows="2">${esc(a[k])}</textarea><div class="small muted" data-cnt="${k}"></div></div>`;
+  box.innerHTML = `<h2>SMS-рассылка ${a.active ? `<span class="badge ok">работает · ${a.active === 'gate' ? 'с телефона' : 'SMS.ru'}</span>` : '<span class="badge">не подключена</span>'}</h2>
+    <form id="smsF">
+    <div class="field"><label>Через что отправлять</label><select name="sms_provider">${opts([['gate', 'Мой Android-телефон (приложение SMS Gateway, по тарифу SIM)'], ['smsru', 'Сервис SMS.ru (платно, от имени ателье)']], prov)}</select></div>
+    <div data-p="gate" class="small muted" style="margin-bottom:8px">1) Установите на Android-телефон с SIM приложение <b>SMS Gateway for Android</b> (Google Play: «SMS Gateway for Android™», разработчик capcom6). 2) В приложении включите <b>«Облачный сервер» (Cloud server)</b> и нажмите «Онлайн». 3) Перепишите сюда <b>логин и пароль</b> из раздела облачного сервера. Телефон держите на зарядке и с интернетом; в настройках Android разрешите приложению работать в фоне.</div>
+    <div class="row" data-p="gate"><div class="field"><label>Логин (Username)</label><input name="sms_gate_user" value="${esc(a.sms_gate_user || '')}" autocomplete="off"></div>
+      <div class="field"><label>Пароль ${a.has_gate_pass ? '<span class="muted">(сохранён)</span>' : ''}</label><input name="sms_gate_pass" type="password" autocomplete="new-password" placeholder="${a.has_gate_pass ? '•••••• (не менять)' : ''}"></div></div>
+    <div class="row" data-p="smsru"><div class="field"><label>API-ключ SMS.ru (api_id) ${a.has_smsru ? '<span class="muted">(сохранён)</span>' : ''}</label><input name="smsru_api_id" type="password" autocomplete="new-password" placeholder="${a.has_smsru ? '•••••• (не менять)' : ''}"></div>
+      <div class="field"><label>Имя отправителя (если согласовано)</label><input name="smsru_from" value="${esc(a.smsru_from || '')}" placeholder="BOOMSYSTEM"></div></div>
+    <div class="row"><div class="field"><label>Пауза между SMS, сек</label><input type="number" name="sms_interval" min="10" value="${esc(a.sms_interval)}"></div>
+      <div class="field"><label>Не больше SMS в день</label><input type="number" name="sms_daily_limit" min="1" value="${esc(a.sms_daily_limit)}"></div>
+      <div class="field"><label>Отправлять с, ч</label><input type="number" name="sms_from_hour" min="0" max="23" value="${esc(a.sms_from_hour)}"></div><div class="field"><label>до, ч</label><input type="number" name="sms_to_hour" min="1" max="24" value="${esc(a.sms_to_hour)}"></div></div>
+    <div class="small muted" style="margin:-4px 0 10px">С личной SIM безопаснее не больше 100 SMS в день с паузой от 30 секунд — так оператор не примет рассылку за спам. Ночью сообщения ждут утра.</div>
+    <h3>Автоматические SMS</h3>
+    ${tpl('sms_tpl_remind', 'Напоминание о записи — накануне в ' + esc(a.sms_remind_time), 'sms_auto_remind')}
+    ${tpl('sms_tpl_ready', 'Машина готова — при статусе «Готов»', 'sms_auto_ready')}
+    ${tpl('sms_tpl_review', 'Просьба об отзыве — на следующий день после выдачи', 'sms_auto_review')}
+    <div class="small muted">Подстановки: {имя} {авто} {дата} {время} {номер} {телефон} {2гис} {авито}. 1 SMS — 70 русских букв; длиннее — несколько SMS.</div>
+    <div class="inline" style="flex-wrap:wrap;gap:8px;margin-top:10px"><button class="primary">Сохранить</button><input id="smsTestPh" placeholder="Ваш номер для проверки" style="width:200px"><button type="button" id="smsTest">Отправить проверку</button><a class="btn" href="#/marketing?tab=sms">Очередь SMS</a></div>
+    <div class="small muted" style="margin-top:6px">Сегодня отправлено: ${a.today} · в очереди: ${a.queued}${a.balance ? ' · баланс SMS.ru: ' + esc(a.balance) + ' ₽' : ''}${a.error ? ` · <span style="color:var(--bad)">${esc(a.error)}</span>` : ''}</div></form>`;
+  const f = $('#smsF', box);
+  const sw = () => $$('[data-p]', f).forEach((el) => { el.style.display = el.dataset.p === f.sms_provider.value ? '' : 'none'; });
+  f.sms_provider.onchange = sw; sw();
+  const cnt = () => $$('[data-cnt]', f).forEach((el) => { const t = fillTplSms(f[el.dataset.cnt].value, { name: 'Алексей', car: 'Toyota Camry', date: '21.10', time: '11:00', number: 'БС-00012' }); el.textContent = `${t.length} знаков · ${smsParts(t)} SMS`; });
+  f.addEventListener('input', cnt); cnt();
+  f.onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/sms', formData(f)); toast('Сохранено'); const me = await GET('/api/me'); S.me.sms_on = me.sms_on; loadSmsCard(page); } catch (err) { toast(err.message, true); } };
+  $('#smsTest', box).onclick = async () => { try { await PUT('/api/sms', formData(f)); await POST('/api/sms/test', { phone: $('#smsTestPh', box).value }); toast('Проверочное SMS отправлено — проверьте телефон'); } catch (e) { toast(e.message, true); } };
+}
+
 // Импорт старой клиентской базы (Excel .xlsx / CSV): колонки подбираются автоматически, можно поправить
 function clientImportDialog(done) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.csv,.txt';
@@ -1749,7 +1805,7 @@ const MK_TEMPLATES = [
   ['С днём рождения', 'С днём рождения, {имя}! Команда Бумсистем дарит вам скидку на любые работы в течение месяца. Ждём в гости!'],
   ['Сезонное ТО сигнализации', 'Здравствуйте, {имя}! Весна — время проверить сигнализацию после зимы: метку, датчики, батарейки брелока. Займёт 20 минут. Запись: {телефон}'],
 ];
-const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['tools', '🧰 Инструменты']]
+const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['sms', '📨 SMS'], ['tools', '🧰 Инструменты']]
   .map(([k, t]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#/marketing?tab=${k}">${t}</a>`).join('')}</div>`;
 const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
 const fillTpl = (t, c) => t.replace(/\{имя\}/g, /^клиент/i.test(c.name || '') ? 'добрый день' : (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
@@ -1764,7 +1820,7 @@ route(/^\/marketing$/, async (page, query) => {
   const tab = query.tab || 'analytics';
   page.innerHTML = `<div class="topbar"><h1>Маркетинг</h1><div class="sp"></div></div>${mkTabs(tab)}<div id="mk"><div class="muted">Загрузка…</div></div>`;
   const box = $('#mk', page);
-  const T = { analytics: mkAnalytics, plan: mkPlan, budget: mkBudget, base: mkBase, reviews: mkReviews, tools: mkTools }[tab] || mkAnalytics;
+  const T = { analytics: mkAnalytics, plan: mkPlan, budget: mkBudget, base: mkBase, reviews: mkReviews, sms: mkSms, tools: mkTools }[tab] || mkAnalytics;
   await T(box, query, page);
 });
 
@@ -1886,17 +1942,26 @@ async function mkBase(box, query) {
   box.innerHTML = `<div class="card"><div class="chips" style="flex-wrap:wrap">${SEG.map(([k, t]) => `<a class="chip ${type === k ? 'on' : ''}" href="#/marketing?tab=base&type=${k}">${t}</a>`).join('')}</div>
       ${type === 'sleeping' ? `<div class="inline" style="margin-top:8px;gap:8px"><span class="small muted">Не были больше</span><select id="mon">${opts([3, 6, 9, 12, 24].map((x) => [x, x + ' мес.']), +months)}</select></div>` : ''}</div>
     <div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>Клиентов: ${rows.length}</b><span class="sp"></span>
-      <button class="sm" id="impB">⬆ Загрузить старую базу</button><button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
+      ${S.me.sms_on ? `<button class="sm primary" id="smsAll">📨 SMS всем (${rows.filter((c) => !c.no_sms).length})</button>` : '<a class="btn sm" href="#/settings" title="Подключите SMS в Настройках">📨 Подключить SMS</a>'}<button class="sm" id="impB">⬆ Загрузить старую базу</button><button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
       <div class="field"><label>Текст рассылки</label><select id="tpl">${MK_TEMPLATES.map(([n], i) => `<option value="${i}" ${i === tplIdx ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
         <textarea id="tplText" rows="3" style="margin-top:6px">${esc(MK_TEMPLATES[tplIdx][1])}</textarea><div class="small muted">{имя}, {авто}, {телефон} подставятся сами. MAX откроется с готовым текстом — выберите клиента (номер скопируется для поиска); WhatsApp откроет чат сразу.</div></div>
       <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Последний визит</th><th class="r">Визитов</th><th class="r">Потратил</th><th></th></tr></thead><tbody>
-      ${rows.slice(0, 300).map((c, i) => `<tr><td data-l="Клиент"><a href="#/clients/${c.id}">${esc(c.name)}</a>${c.days_to !== undefined ? ` <span class="badge warn">ДР через ${c.days_to} дн.</span>` : ''}</td><td data-l="Телефон"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
+      ${rows.slice(0, 300).map((c, i) => `<tr><td data-l="Клиент"><a href="#/clients/${c.id}">${esc(c.name)}</a>${c.days_to !== undefined ? ` <span class="badge warn">ДР через ${c.days_to} дн.</span>` : ''}</td><td data-l="Телефон" class="nowrap"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
         <td data-l="Авто" class="muted">${esc(c.cars || '')}</td><td data-l="Визит">${c.last_visit ? dmy(c.last_visit) : '—'}</td><td data-l="Визитов" class="r">${c.visits || 0}</td><td data-l="Потратил" class="r mono">${c.spent ? rub(c.spent) : '—'}</td>
-        <td class="nowrap"><button type="button" class="sm" data-mx="${i}">MAX</button> <button type="button" class="sm ghost" data-wa="${i}">WhatsApp</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">В этом сегменте пока никого</td></tr>'}</tbody></table></div>
+        <td class="nowrap">${c.no_sms ? '<span class="badge" title="Отказался от SMS">без SMS</span> ' : S.me.sms_on ? `<button type="button" class="sm" data-sms="${i}">SMS</button> ` : ''}<button type="button" class="sm" data-mx="${i}">MAX</button> <button type="button" class="sm ghost" data-wa="${i}">WhatsApp</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">В этом сегменте пока никого</td></tr>'}</tbody></table></div>
       ${rows.length > 300 ? '<div class="small muted">Показаны первые 300 — полный список в CSV.</div>' : ''}</div>`;
   const mon = $('#mon', box); if (mon) mon.onchange = () => go('/marketing' + qs({ tab: 'base', type, months: mon.value }));
   $('#tpl', box).onchange = (e) => { $('#tplText', box).value = MK_TEMPLATES[+e.target.value][1]; };
   $('#impB', box).onclick = () => clientImportDialog(() => mkBase(box, query));
+  const toOf = (c) => ({ phone: c.phone, client_id: c.id, name: c.name, car: (c.cars || '').split(',')[0] });
+  const sa = $('#smsAll', box); if (sa) sa.onclick = async () => {
+    const list = rows.filter((c) => !c.no_sms); const text = $('#tplText', box).value;
+    const sample = fillTplSms(text, toOf(list[0] || {}));
+    if (!(await confirmBox(`Отправить SMS ${list.length} клиентам?\n\nПример: «${sample}» (${smsParts(sample)} SMS)\n\nСообщения уйдут постепенно, с паузами и дневным лимитом — чтобы оператор не заблокировал номер.`, 'Поставить в очередь'))) return;
+    try { const r = await POST('/api/sms/send', { text, to: list.map(toOf) }); toast(`В очереди: ${r.queued}${r.est_days > 1 ? ` · уйдут примерно за ${r.est_days} дн.` : ` · примерно ${r.est_minutes} мин.`}`); } catch (e) { toast(e.message, true); }
+  };
+  $$('[data-sms]', box).forEach((b) => (b.onclick = async () => { const c = rows[+b.dataset.sms];
+    try { await POST('/api/sms/send', { text: $('#tplText', box).value, to: [toOf(c)] }); toast('SMS поставлено в очередь: ' + c.name); } catch (e) { toast(e.message, true); } }));
   $('#cpPh', box).onclick = () => copyText(rows.map((c) => c.phone).join('\n'), `Скопировано телефонов: ${rows.length}`);
   $('#csv', box).onclick = () => {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -1918,12 +1983,14 @@ async function mkReviews(box) {
       ${d.orders.map((o, i) => `<tr style="${o.review_asked_at ? 'opacity:.6' : ''}"><td data-l="Выдан">${dmy(o.issued)}</td><td data-l="Клиент"><b>${esc(o.name || '—')}</b><div class="small"><a href="tel:${esc(o.phone || '')}">${esc(o.phone || '')}</a></div></td>
         <td data-l="Работы" class="small">${esc([o.brand, o.model].filter(Boolean).join(' '))}<div class="muted">${esc(o.works || '')}</div></td>
         <td data-l="Статус">${o.review_asked_at ? `<span class="badge ok">попросили ${dmy(o.review_asked_at)}</span>` : '<span class="badge warn">не просили</span>'}</td>
-        <td class="nowrap"><button type="button" class="sm" data-rwa="${i}">💬 Написать в MAX</button> <button type="button" class="sm" data-rcp="${i}">Текст</button> <button type="button" class="sm ghost" data-rmk="${i}">${o.review_asked_at ? 'Снять отметку' : 'Отметить'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет выданных заказов за 45 дней</td></tr>'}</tbody></table></div></div>`;
+        <td class="nowrap">${S.me.sms_on ? `<button type="button" class="sm" data-rsms="${i}">SMS</button> ` : ''}<button type="button" class="sm" data-rwa="${i}">💬 Написать в MAX</button> <button type="button" class="sm" data-rcp="${i}">Текст</button> <button type="button" class="sm ghost" data-rmk="${i}">${o.review_asked_at ? 'Снять отметку' : 'Отметить'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет выданных заказов за 45 дней</td></tr>'}</tbody></table></div></div>`;
   const text = (o) => fillTpl(tpl, { name: o.name, twogis: d.twogis_url });
   const mark = async (o, undo) => { await POST('/api/mk/reviews/' + o.id, { undo }); };
   $$('[data-rwa]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rwa];
     try { await navigator.clipboard.writeText(o.phone || ''); } catch {}
     window.open(maxLink(text(o)), '_blank'); toast(`MAX: выберите клиента ${o.name || ''} — его номер ${o.phone || ''} скопирован для поиска`); await mark(o); mkReviews(box); }));
+  $$('[data-rsms]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rsms];
+    try { await POST('/api/sms/send', { text: text(o), phone: o.phone, order_id: o.id }); await mark(o); toast('SMS поставлено в очередь'); mkReviews(box); } catch (e) { toast(e.message, true); } }));
   $$('[data-rcp]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rcp]; await copyText(text(o), 'Текст скопирован — отправьте клиенту'); await mark(o); mkReviews(box); }));
   $$('[data-rmk]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rmk]; await mark(o, !!o.review_asked_at); mkReviews(box); }));
 }
@@ -2382,6 +2449,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="smsCard"><h2>SMS-рассылка</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="revCard"><h2>Отзывы на сайте</h2><div class="muted">Загрузка…</div></div>
     <div class="card"><h2>Импорт журнала из Excel</h2>
       <div class="small muted" style="margin-bottom:10px">Загрузите файл <b>journal-import.json</b>, подготовленный из вашей таблицы «Журнал записи». Записи появятся в календаре как заметки с теми же цветами. Повторная загрузка не создаёт дублей.</div>
@@ -2400,6 +2468,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   loadUpdateCard(page);
   loadAlfaCard(page, query);
   loadSabyCard(page);
+  loadSmsCard(page);
   loadReviewsCard(page);
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
