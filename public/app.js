@@ -1712,7 +1712,7 @@ const MK_MONTH_IDEAS = {
   12: ['Новогодние сертификаты на автозвук и сигнализации', 'Итоги года: лучшие работы ателье', 'График работы в праздники'],
 };
 const MK_TEMPLATES = [
-  ['Отзыв после выдачи', 'Здравствуйте, {имя}! Спасибо, что выбрали Бумсистем. Если всё понравилось — оставьте, пожалуйста, пару слов о нас в 2ГИС, это очень помогает: {2гис}'],
+  ['Отзыв после выдачи', 'Здравствуйте, {имя}! Спасибо, что выбрали Бумсистем. Если всё понравилось — оставьте, пожалуйста, пару слов о нас, это очень помогает:\n2ГИС: {2гис}\nАвито: {авито}'],
   ['Автозапуск перед зимой', 'Здравствуйте, {имя}! Скоро морозы — успейте поставить сигнализацию с автозапуском без очереди. Подберём StarLine или Pandora под ваш {авто}, настроим запуск по температуре и времени. Записаться: {телефон}'],
   ['Давно не были', 'Здравствуйте, {имя}! Давно вас не видели в Бумсистем. Приезжайте на бесплатную диагностику звука и сигнализации — проверим, всё ли работает как надо. Запись: {телефон}'],
   ['С днём рождения', 'С днём рождения, {имя}! Команда Бумсистем дарит вам скидку на любые работы в течение месяца. Ждём в гости!'],
@@ -1722,7 +1722,7 @@ const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Ан�
   .map(([k, t]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#/marketing?tab=${k}">${t}</a>`).join('')}</div>`;
 const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
 const fillTpl = (t, c) => t.replace(/\{имя\}/g, (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
-  .replace(/\{2гис\}/g, c.twogis || '').replace(/\{телефон\}/g, S.me.company_phone || '');
+  .replace(/\{2гис\}/g, c.twogis || S.me.twogis_url || '').replace(/\{авито\}/g, S.me.social?.avito || '').replace(/\{телефон\}/g, S.me.company_phone || '');
 const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '').replace(/^8/, '7'); return d.length >= 10 ? `https://wa.me/${d.length === 10 ? '7' + d : d}?text=${encodeURIComponent(text)}` : ''; };
 // MAX: ссылка «поделиться» открывает приложение с готовым текстом — остаётся выбрать клиента (по номеру ищется в поиске MAX)
 const maxLink = (text) => 'https://max.ru/:share?text=' + encodeURIComponent(text);
@@ -1880,7 +1880,7 @@ async function mkBase(box, query) {
 async function mkReviews(box) {
   const d = await GET('/api/mk/reviews');
   const tpl = MK_TEMPLATES[0][1];
-  box.innerHTML = `<div class="card"><h2>Попросить отзыв</h2><div class="small muted" style="margin-bottom:10px">Заказы, выданные за последние 45 дней. Лучшее время попросить отзыв — через 1–3 дня после выдачи. Каждый отзыв в 2ГИС поднимает карточку в поиске.<br>«Написать в MAX» откроет MAX с готовым текстом — выберите клиента (номер скопируется, вставьте его в поиск MAX).
+  box.innerHTML = `<div class="card"><h2>Попросить отзыв</h2><div class="small muted" style="margin-bottom:10px">Заказы, выданные за последние 45 дней. Лучшее время попросить отзыв — через 1–3 дня после выдачи. Каждый отзыв в 2ГИС поднимает карточку в поиске.<br>В тексте две ссылки — на 2ГИС и на Авито. «Написать в MAX» откроет MAX с готовым текстом — выберите клиента (номер скопируется, вставьте его в поиск MAX).
       ${d.twogis_url ? '' : '<br><b style="color:var(--warn)">Ссылка на 2ГИС не указана — добавьте её в Настройках → «Отзывы на сайте».</b>'}</div>
       <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Выдан</th><th>Клиент</th><th>Авто и работы</th><th>Статус</th><th></th></tr></thead><tbody>
       ${d.orders.map((o, i) => `<tr style="${o.review_asked_at ? 'opacity:.6' : ''}"><td data-l="Выдан">${dmy(o.issued)}</td><td data-l="Клиент"><b>${esc(o.name || '—')}</b><div class="small"><a href="tel:${esc(o.phone || '')}">${esc(o.phone || '')}</a></div></td>
@@ -1906,7 +1906,7 @@ async function mkTools(box) {
       <div class="field"><label>Готовая ссылка</label><div class="inline"><input id="uo" readonly><button type="button" class="sm" id="ucp">Копировать</button></div></div>
       <div id="qr" style="margin-top:8px"></div></div>
     ${S.me.social && (S.me.social.tg || S.me.social.vk || S.me.social.max) ? `<div class="card"><h2>Ссылки на соцсети для постов и визиток</h2><div class="small muted" style="margin-bottom:8px">Вставляйте в подписи постов, сообщения клиентам и печать (QR-код сделает любой генератор).</div>
-      ${[['Telegram', S.me.social.tg], ['ВКонтакте', S.me.social.vk], ['MAX', S.me.social.max], ['Авито', S.me.social.avito]].filter((x) => x[1]).map(([n, u]) => `<div class="mk-tpl inline" style="justify-content:space-between;gap:8px"><span><b>${n}</b> <span class="small muted" style="word-break:break-all">${esc(u)}</span></span><button type="button" class="sm" data-scp="${esc(u)}">Копировать</button></div>`).join('')}</div>` : ''}
+      ${[['Telegram', S.me.social.tg], ['ВКонтакте', S.me.social.vk], ['MAX', S.me.social.max], ['Авито', S.me.social.avito], ['2ГИС (отзывы)', S.me.twogis_url]].filter((x) => x[1]).map(([n, u]) => `<div class="mk-tpl inline" style="justify-content:space-between;gap:8px"><span><b>${n}</b> <span class="small muted" style="word-break:break-all">${esc(u)}</span></span><button type="button" class="sm" data-scp="${esc(u)}">Копировать</button></div>`).join('')}</div>` : ''}
     <div class="card"><h2>Шаблоны сообщений</h2>${MK_TEMPLATES.map(([n, t], i) => `<div class="mk-tpl"><div class="inline" style="justify-content:space-between"><b>${esc(n)}</b><button type="button" class="sm" data-tcp="${i}">Копировать</button></div><div class="small muted">${esc(t)}</div></div>`).join('')}</div>
     <div class="card"><h2>Где ещё взять клиентов</h2><ul class="mk-list">
       <li><b>2ГИС и Яндекс Карты</b> — фото работ раз в неделю, ответы на все отзывы, актуальные часы работы.</li>
@@ -1917,7 +1917,7 @@ async function mkTools(box) {
       <li><b>Сарафан</b> — после каждой выдачи просите отзыв (вкладка «Отзывы»).</li></ul></div>
     <div class="card"><h2>Быстрые ссылки</h2><div class="inline" style="flex-wrap:wrap;gap:8px">
       <a class="btn sm" href="/" target="_blank">🌐 Сайт</a>${S.me.social?.tg ? `<a class="btn sm" href="${esc(S.me.social.tg)}" target="_blank" rel="noopener">✈️ Наш Telegram</a>` : ''}${S.me.social?.vk ? `<a class="btn sm" href="${esc(S.me.social.vk)}" target="_blank" rel="noopener">ВК группа</a>` : ''}${S.me.social?.max ? `<a class="btn sm" href="${esc(S.me.social.max)}" target="_blank" rel="noopener">💬 Наш MAX</a>` : ''}${S.me.social?.avito ? `<a class="btn sm" href="${esc(S.me.social.avito)}" target="_blank" rel="noopener">🏷 Наш Авито</a>` : ''}<a class="btn sm" href="#/leads">📥 Заявки</a><a class="btn sm" href="#/settings">⭐ Отзывы на сайте</a><a class="btn sm" href="#/stock">🏷 Склад (товары на сайте)</a>
-      <a class="btn sm" href="https://2gis.ru" target="_blank" rel="noopener">2ГИС</a><a class="btn sm" href="https://yandex.ru/sprav" target="_blank" rel="noopener">Яндекс Бизнес</a><a class="btn sm" href="https://www.avito.ru/profile" target="_blank" rel="noopener">Авито (кабинет)</a><a class="btn sm" href="https://vk.com/ads" target="_blank" rel="noopener">VK Реклама</a></div></div>
+      <a class="btn sm" href="${esc(S.me.twogis_url || 'https://2gis.ru')}" target="_blank" rel="noopener">Наш 2ГИС</a><a class="btn sm" href="https://yandex.ru/sprav" target="_blank" rel="noopener">Яндекс Бизнес</a><a class="btn sm" href="https://www.avito.ru/profile" target="_blank" rel="noopener">Авито (кабинет)</a><a class="btn sm" href="https://vk.com/ads" target="_blank" rel="noopener">VK Реклама</a></div></div>
   </div>`;
   const upd = () => { const u = new URL(site); if ($('#us', box).value.trim()) u.searchParams.set('utm_source', $('#us', box).value.trim()); if ($('#uc', box).value.trim()) u.searchParams.set('utm_campaign', $('#uc', box).value.trim());
     const link = u.toString() + $('#ua', box).value; $('#uo', box).value = link; };
