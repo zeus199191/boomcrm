@@ -81,7 +81,7 @@ const server = http.createServer(async (req, res) => {
         if (origin && new URL(origin).host !== req.headers.host) throw new HttpError(403, 'Запрос с чужого сайта');
       }
       const ctx = { req, res, user, token: cookies.sid, params: m.params, query: Object.fromEntries(url.searchParams), body: {} };
-      if (req.method !== 'GET') ctx.body = await readBody(req, pathname === '/api/products/import-price' || pathname === '/api/bank/upload' || /^\/api\/orders\/\d+\/photos$/.test(pathname) ? 15 * 1024 * 1024 : undefined);
+      if (req.method !== 'GET') ctx.body = await readBody(req, pathname === '/api/products/import-price' || pathname === '/api/clients/import' || pathname === '/api/bank/upload' || /^\/api\/orders\/\d+\/photos$/.test(pathname) ? 15 * 1024 * 1024 : undefined);
       let result;
       for (const fn of fns) { result = await fn(ctx); }
       if (result !== undefined) send(res, 200, result);

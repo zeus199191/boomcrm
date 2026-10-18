@@ -900,8 +900,9 @@ route(/^\/calendar$/, async (page, query) => {
 route(/^\/clients$/, async (page) => {
   page.innerHTML = `<div class="topbar"><h1>Клиенты</h1><span class="muted" id="cnt"></span><div class="sp"></div>
     <input class="search" id="q" placeholder="Имя, телефон, госномер, марка, VIN">
-    <a class="btn" href="/api/export/clients.csv">Excel</a><button class="primary" id="add">+ Клиент</button></div>
+    <button id="imp">⬆ Импорт базы</button><a class="btn" href="/api/export/clients.csv">Excel</a><button class="primary" id="add">+ Клиент</button></div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
+  $('#imp', page).onclick = () => clientImportDialog(() => load());
   const load = async () => {
     const { rows, total } = await GET('/api/clients' + qs({ q: $('#q', page).value, limit: 300 }));
     $('#cnt', page).textContent = total;
@@ -1693,6 +1694,36 @@ async function loadReviewsCard(page) {
   $$('[data-rvd]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить отзыв с сайта?', 'Удалить')) { await DEL('/api/site/reviews/' + b.dataset.rvd); loadReviewsCard(page); } }));
 }
 
+// Импорт старой клиентской базы (Excel .xlsx / CSV): колонки подбираются автоматически, можно поправить
+function clientImportDialog(done) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.csv,.txt';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    if (f.size > 12 * 1024 * 1024) return toast('Файл больше 12 МБ', true);
+    const file = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+    let pv; try { pv = await POST('/api/clients/import', { file, name: f.name }); } catch (e) { return toast(e.message, true); }
+    const colOpts = (cur) => `<option value="">— нет —</option>${pv.headers.map((h, j) => `<option value="${j}" ${String(cur) === String(j) ? 'selected' : ''}>${esc(h)}</option>`).join('')}`;
+    const show = (p) => `${p.journal ? '<div class="small" style="margin-bottom:6px;color:var(--accent)">Похоже на журнал записи: телефоны найдены прямо в тексте ячеек. Машина берётся из первой строки записи, имя — если указано рядом, дата — из колонки дат.</div>' : ''}<div class="imp-stats"><div><b>${p.rows}</b><span>строк</span></div><div><b>${p.clients}</b><span>клиентов с телефоном</span></div><div><b style="color:var(--ok)">${p.new}</b><span>новых</span></div><div><b>${p.existing}</b><span>уже есть в CRM (не дублируем)</span></div><div><b class="muted">${p.no_phone}</b><span>без телефона (пропустим)</span></div></div>
+      ${p.merged ? `<div class="small muted">Повторы одного телефона объединены: ${p.merged} строк — это визиты одного и того же клиента.</div>` : ''}
+      <div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>Имя</th><th>Телефон</th><th>Авто</th><th>Визит</th><th>Заметки</th></tr></thead><tbody>
+      ${p.preview.map((c) => `<tr><td>${esc(c.name || '—')}${c.exists ? ' <span class="badge">есть</span>' : ''}</td><td class="nowrap">${esc(c.phone)}</td><td>${esc(c.car || '')}</td><td class="nowrap">${c.date ? dmy(c.date) : ''}${c.visits > 1 ? ` <span class="muted small">×${c.visits}</span>` : ''}</td><td class="small muted">${esc(c.notes || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    const m = modal('Импорт клиентской базы', `
+      <div class="small muted" style="margin-bottom:10px">Файл «${esc(f.name)}». Проверьте, правильно ли определились колонки — при необходимости поправьте и нажмите «Пересчитать». Загружаются только записи с телефоном. Дубли ищутся по телефону: кто уже есть в CRM — не дублируется и не меняется (если не поставить галочку ниже).</div>
+      <div class="imp-map" ${pv.journal ? 'style="display:none"' : ''}>${Object.entries(pv.fields).map(([k, t]) => `<label><span>${esc(t)}</span><select data-map="${k}">${colOpts(pv.map[k])}</select></label>`).join('')}</div>
+      <div class="inline" style="gap:8px;margin:8px 0"><button type="button" class="sm" id="recalc" ${pv.journal ? 'style="display:none"' : ''}>Пересчитать</button><span class="sp"></span>
+        <label class="inline small" style="gap:6px"><input type="checkbox" name="update"> дополнить уже существующих клиентов заметками из файла</label>
+        <label class="inline small" style="gap:6px">Источник для новых: <input name="source" value="Старая база" style="width:150px"></label></div>
+      <div id="impPv">${show(pv)}</div>`,
+    { wide: true, submit: 'Загрузить в CRM', onSubmit: async (d, form) => {
+      const r = await POST('/api/clients/import', { file, name: f.name, mode: 'commit', map: getMap(form), source: d.source, update: !!d.update });
+      toast(`Готово: новых клиентов ${r.added}, обновлено ${r.updated}${r.no_phone ? `, без телефона пропущено ${r.no_phone}` : ''}`); done && done();
+    } });
+    const getMap = (form) => Object.fromEntries($$('[data-map]', form).map((sl) => [sl.dataset.map, sl.value]).filter(([, v]) => v !== ''));
+    $('#recalc', m.form).onclick = async () => { try { const p = await POST('/api/clients/import', { file, name: f.name, map: getMap(m.form) }); $('#impPv', m.form).innerHTML = show(p); } catch (e) { toast(e.message, true); } };
+  };
+  inp.click();
+}
+
 // ================= Маркетинг =================
 const MK_CHANNELS = ['ВКонтакте', 'Telegram', 'Instagram', 'MAX', 'Авито', '2ГИС', 'Яндекс Карты', 'Яндекс Директ', 'Сайт', 'YouTube', 'Листовки / офлайн', 'Партнёры'];
 const MK_FORMATS = ['Пост', 'Карусель фото', 'Видео / Reels', 'Сторис', 'Статья', 'Акция', 'Отзыв клиента', 'До / после'];
@@ -1721,7 +1752,7 @@ const MK_TEMPLATES = [
 const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['tools', '🧰 Инструменты']]
   .map(([k, t]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#/marketing?tab=${k}">${t}</a>`).join('')}</div>`;
 const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
-const fillTpl = (t, c) => t.replace(/\{имя\}/g, (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
+const fillTpl = (t, c) => t.replace(/\{имя\}/g, /^клиент/i.test(c.name || '') ? 'добрый день' : (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
   .replace(/\{2гис\}/g, c.twogis || S.me.twogis_url || '').replace(/\{авито\}/g, S.me.social?.avito || '').replace(/\{телефон\}/g, S.me.company_phone || '');
 const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '').replace(/^8/, '7'); return d.length >= 10 ? `https://wa.me/${d.length === 10 ? '7' + d : d}?text=${encodeURIComponent(text)}` : ''; };
 // MAX: ссылка «поделиться» открывает приложение с готовым текстом — остаётся выбрать клиента (по номеру ищется в поиске MAX)
@@ -1855,7 +1886,7 @@ async function mkBase(box, query) {
   box.innerHTML = `<div class="card"><div class="chips" style="flex-wrap:wrap">${SEG.map(([k, t]) => `<a class="chip ${type === k ? 'on' : ''}" href="#/marketing?tab=base&type=${k}">${t}</a>`).join('')}</div>
       ${type === 'sleeping' ? `<div class="inline" style="margin-top:8px;gap:8px"><span class="small muted">Не были больше</span><select id="mon">${opts([3, 6, 9, 12, 24].map((x) => [x, x + ' мес.']), +months)}</select></div>` : ''}</div>
     <div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>Клиентов: ${rows.length}</b><span class="sp"></span>
-      <button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
+      <button class="sm" id="impB">⬆ Загрузить старую базу</button><button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
       <div class="field"><label>Текст рассылки</label><select id="tpl">${MK_TEMPLATES.map(([n], i) => `<option value="${i}" ${i === tplIdx ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
         <textarea id="tplText" rows="3" style="margin-top:6px">${esc(MK_TEMPLATES[tplIdx][1])}</textarea><div class="small muted">{имя}, {авто}, {телефон} подставятся сами. MAX откроется с готовым текстом — выберите клиента (номер скопируется для поиска); WhatsApp откроет чат сразу.</div></div>
       <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Последний визит</th><th class="r">Визитов</th><th class="r">Потратил</th><th></th></tr></thead><tbody>
@@ -1865,6 +1896,7 @@ async function mkBase(box, query) {
       ${rows.length > 300 ? '<div class="small muted">Показаны первые 300 — полный список в CSV.</div>' : ''}</div>`;
   const mon = $('#mon', box); if (mon) mon.onchange = () => go('/marketing' + qs({ tab: 'base', type, months: mon.value }));
   $('#tpl', box).onchange = (e) => { $('#tplText', box).value = MK_TEMPLATES[+e.target.value][1]; };
+  $('#impB', box).onclick = () => clientImportDialog(() => mkBase(box, query));
   $('#cpPh', box).onclick = () => copyText(rows.map((c) => c.phone).join('\n'), `Скопировано телефонов: ${rows.length}`);
   $('#csv', box).onclick = () => {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
