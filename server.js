@@ -93,6 +93,10 @@ const server = http.createServer(async (req, res) => {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
       return send(res, 200, require('./lib/landing').render({ loggedIn: !!user }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     }
+    if (req.method === 'GET' && (pathname === '/avtozvuk' || pathname === '/avtozvuk/')) {
+      if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
+      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'sound' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    }
     if (req.method === 'GET' && (pathname === '/crm' || pathname.startsWith('/crm/'))) {
       // версия в адресах скрипта и стилей — после обновления браузер (и иконка на iPhone) сразу берёт новые файлы, а не старые из кэша
       const v = require('./package.json').version;
