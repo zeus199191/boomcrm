@@ -184,6 +184,7 @@ const ICONS = {
   leads: I('<path d="M4 4h16v12H8l-4 4z"/><path d="M8 9h8M8 12h5"/>'),
   stock: I('<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>'),
   services: I('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/>'),
+  mega: I('<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'),
   money: I('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>'),
   salary: I('<circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .9-3 2s1 1.7 3 2 3 1 3 2.1-1.3 2-3 2c-1.4 0-2.6-.6-3-1.6M12 6.5V8M12 16v1.5"/>'),
   users: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/>'),
@@ -213,6 +214,7 @@ const NAV = [
   ['/contractors', 'Контрагенты', 'partners', 'office'],
   ['/warranty', 'Гарантия', 'shield', 'office'],
   ['/finance', 'Финансы', 'money', 'office'],
+  ['/marketing', 'Маркетинг', 'mega', 'admin'],
   ['/salary', 'Зарплата', 'salary', 'all'],
   ['/users', 'Сотрудники', 'users', 'admin'],
   ['/settings', 'Настройки', 'settings', 'admin'],
@@ -1689,6 +1691,231 @@ async function loadReviewsCard(page) {
   $('#rvAdd', box).onclick = () => edit();
   $$('[data-rve]', box).forEach((b) => (b.onclick = () => edit(d.reviews.find((x) => x.id === +b.dataset.rve))));
   $$('[data-rvd]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить отзыв с сайта?', 'Удалить')) { await DEL('/api/site/reviews/' + b.dataset.rvd); loadReviewsCard(page); } }));
+}
+
+// ================= Маркетинг =================
+const MK_CHANNELS = ['ВКонтакте', 'Telegram', 'Instagram', 'MAX', 'Авито', '2ГИС', 'Яндекс Карты', 'Яндекс Директ', 'Сайт', 'YouTube', 'Листовки / офлайн', 'Партнёры'];
+const MK_FORMATS = ['Пост', 'Карусель фото', 'Видео / Reels', 'Сторис', 'Статья', 'Акция', 'Отзыв клиента', 'До / после'];
+const MK_ST = { idea: ['Идея', ''], plan: ['В плане', 'warn'], ready: ['Готово', 'ok'], published: ['Опубликовано', 'ok'] };
+const MK_MONTH_IDEAS = {
+  1: ['Морозы: как работает автозапуск по температуре', 'Разбор: почему садится аккумулятор с сигнализацией', 'Видео: тёплый салон утром за 10 минут'],
+  2: ['Подарок на 23 февраля: сертификат на автозвук', 'Топ-3 магнитолы на Android этого года', 'До/после: шумоизоляция дверей'],
+  3: ['Подарок на 8 марта: камера, регистратор, подсветка', 'Весна: проверяем сигнализацию после зимы', 'Как выбрать сабвуфер под багажник'],
+  4: ['Весенняя шумоизоляция: арки и пол перед летом', 'Летний сезон автозвука: фронт и процессор', 'Отзыв клиента + фото работы'],
+  5: ['Звук для дачи и поездок: акустика + усилитель', 'Мультимедиа с CarPlay/Android Auto — как это работает', 'Розыгрыш среди подписчиков'],
+  6: ['Летний автозвук: громко и чисто', 'Разбор системы клиента: что и зачем стоит', 'Видео замеров: как настраиваем процессор'],
+  7: ['Защита от угона летом: метки и GSM', 'До/после: подиумы и 3D-печать', 'Ответы на частые вопросы клиентов'],
+  8: ['Скоро осень — запишитесь на автозапуск без очереди', 'Шумоизоляция перед зимней резиной', 'Экскурсия по мастерской'],
+  9: ['Ранняя запись на сигнализации с автозапуском', 'Сравнение StarLine и Pandora: что выбрать', 'Шумоизоляция: шипы и трасса'],
+  10: ['Автозапуск до морозов: акция ранней записи', 'Чек-лист подготовки машины к зиме', 'Видео: установка сигнализации от и до'],
+  11: ['Последние окна на автозапуск до холодов', 'Отзыв клиента: зима с автозапуском', 'Подарочные сертификаты к Новому году'],
+  12: ['Новогодние сертификаты на автозвук и сигнализации', 'Итоги года: лучшие работы ателье', 'График работы в праздники'],
+};
+const MK_TEMPLATES = [
+  ['Отзыв после выдачи', 'Здравствуйте, {имя}! Спасибо, что выбрали Бумсистем. Если всё понравилось — оставьте, пожалуйста, пару слов о нас в 2ГИС, это очень помогает: {2гис}'],
+  ['Автозапуск перед зимой', 'Здравствуйте, {имя}! Скоро морозы — успейте поставить сигнализацию с автозапуском без очереди. Подберём StarLine или Pandora под ваш {авто}, настроим запуск по температуре и времени. Записаться: {телефон}'],
+  ['Давно не были', 'Здравствуйте, {имя}! Давно вас не видели в Бумсистем. Приезжайте на бесплатную диагностику звука и сигнализации — проверим, всё ли работает как надо. Запись: {телефон}'],
+  ['С днём рождения', 'С днём рождения, {имя}! Команда Бумсистем дарит вам скидку на любые работы в течение месяца. Ждём в гости!'],
+  ['Сезонное ТО сигнализации', 'Здравствуйте, {имя}! Весна — время проверить сигнализацию после зимы: метку, датчики, батарейки брелока. Займёт 20 минут. Запись: {телефон}'],
+];
+const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['tools', '🧰 Инструменты']]
+  .map(([k, t]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#/marketing?tab=${k}">${t}</a>`).join('')}</div>`;
+const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
+const fillTpl = (t, c) => t.replace(/\{имя\}/g, (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
+  .replace(/\{2гис\}/g, c.twogis || '').replace(/\{телефон\}/g, S.me.company_phone || '');
+const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '').replace(/^8/, '7'); return d.length >= 10 ? `https://wa.me/${d.length === 10 ? '7' + d : d}?text=${encodeURIComponent(text)}` : ''; };
+const copyText = async (t, msg = 'Скопировано') => { try { await navigator.clipboard.writeText(t); toast(msg); } catch { prompt('Скопируйте текст:', t); } };
+
+route(/^\/marketing$/, async (page, query) => {
+  if (!isAdmin()) return go('/');
+  const tab = query.tab || 'analytics';
+  page.innerHTML = `<div class="topbar"><h1>Маркетинг</h1><div class="sp"></div></div>${mkTabs(tab)}<div id="mk"><div class="muted">Загрузка…</div></div>`;
+  const box = $('#mk', page);
+  const T = { analytics: mkAnalytics, plan: mkPlan, budget: mkBudget, base: mkBase, reviews: mkReviews, tools: mkTools }[tab] || mkAnalytics;
+  await T(box, query, page);
+});
+
+async function mkAnalytics(box, query) {
+  const from = query.from || today().slice(0, 8) + '01', to = query.to || today();
+  const d = await GET('/api/mk/analytics' + qs({ from, to }));
+  const t = d.totals;
+  const maxRev = Math.max(1, ...d.trend.map((x) => x.revenue)), maxLd = Math.max(1, ...d.trend.map((x) => x.leads));
+  const maxCat = Math.max(1, ...d.cats.map((x) => x.sum));
+  const presets = [['Этот месяц', today().slice(0, 8) + '01', today()], ['Прошлый месяц', ...(() => { const x = new Date(today() + 'T12:00'); x.setDate(0); const e = ymd(x); x.setDate(1); return [ymd(x), e]; })()],
+    ['3 месяца', (() => { const x = new Date(today() + 'T12:00'); x.setMonth(x.getMonth() - 3); return ymd(x); })(), today()], ['Год', (() => { const x = new Date(today() + 'T12:00'); x.setFullYear(x.getFullYear() - 1); return ymd(x); })(), today()]];
+  box.innerHTML = `<div class="card mk-period"><div class="inline" style="flex-wrap:wrap;gap:8px">
+      ${presets.map(([n, f, e]) => `<a class="chip ${f === from && e === to ? 'on' : ''}" href="#/marketing?tab=analytics&from=${f}&to=${e}">${n}</a>`).join('')}
+      <span class="sp"></span><input type="date" id="mf" value="${from}"> — <input type="date" id="mt" value="${to}"><button class="sm" id="mgo">Показать</button></div></div>
+    <div class="kpis mk-kpis">
+      <div class="kpi"><span>Выручка (выданные)</span><b>${rub(t.revenue)}</b><small>${t.orders} заказов · средний чек ${rub(t.avg)}</small></div>
+      <div class="kpi"><span>Заявки</span><b>${t.leads}</b><small>в заказ: ${t.converted} · конверсия ${t.conversion}%</small></div>
+      <div class="kpi"><span>Новые клиенты</span><b>${t.new_clients}</b><small>повторные заказы: ${t.repeat_orders} (${t.repeat_share}%)</small></div>
+      <div class="kpi"><span>Реклама</span><b>${rub(t.spend)}</b><small>${t.spend ? `окупаемость рекламных каналов ${pctTxt(t.romi)}` : 'внесите расходы во вкладке «Реклама и бюджет»'}</small></div>
+    </div>
+    <div class="card"><h2>Каналы привлечения</h2><div class="small muted" style="margin-bottom:8px">Источник берётся из заявки и из поля «Откуда узнал» у клиента. Расходы — из вкладки «Реклама и бюджет» и из Финансов (статья «Реклама»).</div>
+      <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Канал</th><th class="r">Заявки</th><th class="r">В заказ</th><th class="r">Новые клиенты</th><th class="r">Заказы</th><th class="r">Выручка</th><th class="r">Расход</th><th class="r">Цена заявки</th><th class="r">Цена клиента</th><th class="r">ROMI</th></tr></thead>
+      <tbody>${d.channels.map((c) => `<tr><td data-l="Канал"><b>${esc(c.channel)}</b></td><td data-l="Заявки" class="r">${c.leads || '—'}</td><td data-l="В заказ" class="r">${c.converted || '—'}</td><td data-l="Новые клиенты" class="r">${c.clients || '—'}</td>
+        <td data-l="Заказы" class="r">${c.orders || '—'}</td><td data-l="Выручка" class="r mono">${c.revenue ? rub(c.revenue) : '—'}</td><td data-l="Расход" class="r mono">${c.spend ? rub(c.spend) : '—'}</td>
+        <td data-l="Цена заявки" class="r mono">${c.cpl ? rub(c.cpl) : '—'}</td><td data-l="Цена клиента" class="r mono">${c.cac ? rub(c.cac) : '—'}</td>
+        <td data-l="ROMI" class="r" style="color:${c.romi === null ? 'inherit' : c.romi >= 0 ? 'var(--ok)' : 'var(--bad)'}">${pctTxt(c.romi)}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">За период данных нет</td></tr>'}</tbody></table></div></div>
+    <div class="grid g2">
+      <div class="card"><h2>Динамика за 12 месяцев</h2><div class="mk-trend">${d.trend.map((x) => `<div class="mk-col" title="${x.month}: выручка ${rub(x.revenue)}, заявок ${x.leads}, новых клиентов ${x.clients}${x.spend ? ', реклама ' + rub(x.spend) : ''}">
+          <div class="bars"><i class="rv" style="height:${Math.round(x.revenue / maxRev * 100)}%"></i><i class="ld" style="height:${Math.round(x.leads / maxLd * 100)}%"></i></div><span>${['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][+x.month.slice(5) - 1]}</span></div>`).join('')}</div>
+        <div class="small muted mk-legend"><i class="rv"></i> выручка <i class="ld"></i> заявки · наведите на столбик, чтобы увидеть цифры</div></div>
+      <div class="card"><h2>Что приносит деньги</h2>${d.cats.length ? d.cats.map((c) => `<div class="mk-hbar"><div class="inline" style="justify-content:space-between"><span>${esc(c.cat)}</span><b class="mono">${rub(c.sum)}</b></div><div class="track"><i style="width:${Math.max(2, Math.round(c.sum / maxCat * 100))}%"></i></div></div>`).join('') : '<div class="muted">Нет выданных заказов за период</div>'}</div>
+    </div>
+    <div class="card"><h2>Топ работ за период</h2><div class="tblwrap"><table class="tbl"><tbody>${d.top.map((x, i) => `<tr><td class="muted" style="width:30px">${i + 1}</td><td>${esc(x.name)}</td><td class="r muted">× ${num(x.qty)}</td><td class="r mono">${rub(x.sum)}</td></tr>`).join('') || '<tr><td class="muted">Нет данных</td></tr>'}</tbody></table></div></div>`;
+  $('#mgo', box).onclick = () => go('/marketing' + qs({ tab: 'analytics', from: $('#mf', box).value, to: $('#mt', box).value }));
+}
+
+async function mkPlan(box, query) {
+  const month = query.m || today().slice(0, 7);
+  const [d, staff, works] = await Promise.all([GET('/api/mk/posts' + qs({ month })), GET('/api/staff'), GET('/api/mk/work-ideas')]);
+  const alex = staff.find((u) => /^(александр|саша)/i.test(u.name));
+  const shift = (k) => { const x = new Date(month + '-15T12:00'); x.setMonth(x.getMonth() + k); return ymd(x).slice(0, 7); };
+  const [y, m] = month.split('-').map(Number); const first = new Date(y, m - 1, 1); const days = new Date(y, m, 0).getDate();
+  const lead = (first.getDay() + 6) % 7; const byDate = {}; for (const p of d.posts) (byDate[p.date] = byDate[p.date] || []).push(p);
+  const cells = []; for (let i = 0; i < lead; i++) cells.push('<div class="mk-day empty"></div>');
+  for (let i = 1; i <= days; i++) { const ds = `${month}-${String(i).padStart(2, '0')}`;
+    cells.push(`<div class="mk-day ${ds === today() ? 'today' : ''}" data-day="${ds}"><div class="dn">${i}</div>${(byDate[ds] || []).map((p) => `<button type="button" class="mk-post st-${p.status}" data-post="${p.id}" title="${esc(p.title)}"><b>${esc(p.channel || '—')}</b> ${esc(p.title)}</button>`).join('')}</div>`); }
+  const ideas = MK_MONTH_IDEAS[m] || [];
+  box.innerHTML = `<div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px"><button class="sm" id="pm">←</button><h2 style="margin:0;min-width:150px;text-align:center">${['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'][m - 1]} ${y}</h2><button class="sm" id="nm">→</button>
+      <span class="sp"></span><span class="small muted">Публикаций: <b>${d.stats.total || 0}</b> · опубликовано <b>${d.stats.published || 0}</b> · охват <b>${num(d.stats.reach || 0)}</b> · заявок с постов <b>${d.stats.leads || 0}</b></span>
+      <button class="primary" id="addPost">+ Публикация</button></div>
+      <div class="mk-cal"><div class="mk-wd">Пн</div><div class="mk-wd">Вт</div><div class="mk-wd">Ср</div><div class="mk-wd">Чт</div><div class="mk-wd">Пт</div><div class="mk-wd">Сб</div><div class="mk-wd">Вс</div>${cells.join('')}</div>
+      <div class="small muted" style="margin-top:6px">Нажмите на день, чтобы запланировать публикацию. Цвет: <span class="badge">идея</span> <span class="badge warn">в плане</span> <span class="badge ok">готово / опубликовано</span></div></div>
+    <div class="grid g2">
+      <div class="card"><h2>Банк идей</h2>
+        ${ideas.length ? `<div class="small muted" style="margin-bottom:6px">Сезонные темы на этот месяц:</div>${ideas.map((t) => `<div class="mk-idea"><span>💡 ${esc(t)}</span><button type="button" class="sm" data-season="${esc(t)}">В план</button></div>`).join('')}` : ''}
+        ${d.ideas.length ? `<div class="small muted" style="margin:10px 0 6px">Свои идеи без даты:</div>${d.ideas.map((p) => `<div class="mk-idea"><span>${esc(p.title)}${p.channel ? ` <span class="muted small">· ${esc(p.channel)}</span>` : ''}</span><button type="button" class="sm" data-post="${p.id}">Открыть</button></div>`).join('')}` : ''}
+        <button type="button" class="sm" id="addIdea" style="margin-top:10px">+ Записать идею</button></div>
+      <div class="card"><h2>Контент из ваших работ</h2><div class="small muted" style="margin-bottom:8px">Выданные заказ-наряды — готовые темы для постов «до/после». Фото берите из карточки заказа.</div>
+        <div class="mk-works">${works.map((w) => `<div class="mk-work ${w.used ? 'used' : ''}">${w.photo_id ? `<img src="/api/photos/${w.photo_id}" alt="" loading="lazy">` : '<div class="nop">нет фото</div>'}
+          <div><b>${esc([w.brand, w.model].filter(Boolean).join(' ') || 'Автомобиль')}</b><div class="small muted">${esc((w.items || '').slice(0, 90))}</div><div class="small muted">${dmy(w.date)} · фото: ${w.photos}</div>
+          <div class="inline" style="gap:6px;margin-top:4px"><a class="btn sm" href="#/orders/${w.id}">Заказ</a>${w.used ? '<span class="badge ok">в плане</span>' : `<button type="button" class="sm" data-work="${w.id}">В контент-план</button>`}</div></div></div>`).join('') || '<div class="muted">Пока нет выданных заказов</div>'}</div></div>
+    </div>`;
+  const postModal = (p = {}) => modal(p.id ? 'Публикация' : 'Новая публикация', `
+    <div class="field"><label>Тема *</label><input name="title" required value="${esc(p.title || '')}"></div>
+    <div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${esc(p.date || '')}"></div>
+      <div class="field"><label>Канал</label><input name="channel" list="mkch" value="${esc(p.channel || '')}"><datalist id="mkch">${MK_CHANNELS.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="field"><label>Формат</label><input name="format" list="mkfm" value="${esc(p.format || '')}"><datalist id="mkfm">${MK_FORMATS.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div></div>
+    <div class="row"><div class="field"><label>Статус</label><select name="status">${opts(Object.entries(MK_ST).map(([k, v]) => [k, v[0]]), p.status || (p.date ? 'plan' : 'idea'))}</select></div>
+      <div class="field"><label>Ответственный</label><select name="responsible_id">${opts(staff.map((u) => [u.id, u.name]), p.responsible_id || (p.id ? '' : alex?.id || ''), '—')}</select></div></div>
+    <div class="field"><label>Текст / сценарий</label><textarea name="text" rows="6" placeholder="Текст поста, сценарий видео, хэштеги">${esc(p.text || '')}</textarea></div>
+    <div class="row"><div class="field"><label>Ссылка на публикацию</label><input name="url" value="${esc(p.url || '')}" placeholder="https://"></div>
+      <div class="field"><label>Охват / просмотры</label><input type="number" name="reach" value="${p.reach ?? ''}"></div><div class="field"><label>Заявок с поста</label><input type="number" name="leads" value="${p.leads ?? ''}"></div></div>
+    ${p.order_id ? `<div class="small">Работа: <a href="#/orders/${p.order_id}">заказ-наряд №${p.order_id}</a></div><input type="hidden" name="order_id" value="${p.order_id}">` : ''}`,
+  { wide: true, footer: `${p.id ? '<button type="button" class="ghost danger" data-delp style="margin-right:auto">Удалить</button>' : ''}<button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>`,
+    onOpen: (f, close) => { const dl = $('[data-delp]', f); if (dl) dl.onclick = async () => { if (await confirmBox('Удалить публикацию из плана?', 'Удалить')) { await DEL('/api/mk/posts/' + p.id); close(); mkPlan(box, query); } }; },
+    onSubmit: async (v) => { if (p.id) await PUT('/api/mk/posts/' + p.id, v); else await POST('/api/mk/posts', v); toast('Сохранено'); mkPlan(box, query); } });
+  const all = [...d.posts, ...d.ideas];
+  $('#pm', box).onclick = () => go('/marketing' + qs({ tab: 'plan', m: shift(-1) }));
+  $('#nm', box).onclick = () => go('/marketing' + qs({ tab: 'plan', m: shift(1) }));
+  $('#addPost', box).onclick = () => postModal({ date: month === today().slice(0, 7) ? today() : month + '-01' });
+  $('#addIdea', box).onclick = () => postModal({ status: 'idea' });
+  $$('[data-day]', box).forEach((c) => (c.onclick = (e) => { if (e.target.closest('[data-post]')) return; postModal({ date: c.dataset.day }); }));
+  $$('[data-post]', box).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); postModal(all.find((x) => x.id === +b.dataset.post)); }));
+  $$('[data-season]', box).forEach((b) => (b.onclick = () => postModal({ title: b.dataset.season, status: 'plan', date: '' })));
+  $$('[data-work]', box).forEach((b) => (b.onclick = () => { const w = works.find((x) => x.id === +b.dataset.work);
+    postModal({ title: `Работа: ${[w.brand, w.model].filter(Boolean).join(' ')} — ${(w.items || '').split(', ')[0] || ''}`.trim(), format: 'До / после', status: 'idea', order_id: w.id, text: `Что сделали: ${w.items || ''}\n\n` }); }));
+}
+
+async function mkBudget(box, query) {
+  const from = query.from || today().slice(0, 8) + '01', to = query.to || today();
+  const [list, an] = await Promise.all([GET('/api/mk/spend' + qs({ from, to })), GET('/api/mk/analytics' + qs({ from, to }))]);
+  const total = list.reduce((s, x) => s + x.amount, 0);
+  const byCh = {}; for (const x of list) byCh[x.channel] = (byCh[x.channel] || 0) + x.amount;
+  box.innerHTML = `<div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px"><input type="date" id="bf" value="${from}"> — <input type="date" id="bt" value="${to}"><button class="sm" id="bgo">Показать</button>
+      <span class="sp"></span><b>Потрачено: ${rub(total)}</b><button class="primary" id="addSp">+ Расход на рекламу</button></div></div>
+    <div class="grid g2"><div class="card"><h2>Расходы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Дата</th><th>Канал</th><th>Комментарий</th><th class="r">Сумма</th><th></th></tr></thead><tbody>
+      ${list.map((x) => `<tr><td data-l="Дата">${dmy(x.date)}</td><td data-l="Канал"><b>${esc(x.channel)}</b></td><td data-l="Комментарий" class="muted">${esc(x.note || '')}${x.payment_id ? ' <span class="badge">в Финансах</span>' : ''}</td><td data-l="Сумма" class="r mono">${rub(x.amount)}</td>
+        <td><button type="button" class="ghost sm danger" data-dsp="${x.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Расходов за период нет</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h2>Окупаемость каналов</h2><div class="small muted" style="margin-bottom:8px">Сколько стоит заявка и клиент, и сколько денег вернулось с выданных заказов клиентов этого канала.</div>
+      ${an.channels.filter((c) => c.spend).map((c) => `<div class="mk-roi"><div class="inline" style="justify-content:space-between"><b>${esc(c.channel)}</b><span class="mono">${rub(c.spend)}</span></div>
+        <div class="small muted">заявок ${c.leads} · клиентов ${c.clients} · выручка ${rub(c.revenue)} · заявка ${c.cpl ? rub(c.cpl) : '—'} · клиент ${c.cac ? rub(c.cac) : '—'} · <b style="color:${c.romi >= 0 ? 'var(--ok)' : 'var(--bad)'}">ROMI ${pctTxt(c.romi)}</b></div></div>`).join('') || '<div class="muted">Добавьте расходы — здесь появится расчёт окупаемости.</div>'}</div></div>`;
+  $('#bgo', box).onclick = () => go('/marketing' + qs({ tab: 'budget', from: $('#bf', box).value, to: $('#bt', box).value }));
+  $('#addSp', box).onclick = () => modal('Расход на рекламу', `
+    <div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required></div></div>
+    <div class="field"><label>Канал</label><input name="channel" list="mkch2" required placeholder="Авито, Яндекс Директ, ВКонтакте…"><datalist id="mkch2">${[...new Set([...MK_CHANNELS, ...SOURCES])].map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
+    <div class="field"><label>Комментарий</label><input name="note" placeholder="Например: продвижение объявления, таргет на октябрь"></div>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="to_finance" checked> Провести расходом в Финансах (статья «Реклама»)</label>
+    <div class="field"><label>Откуда оплачено</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div>
+    <div class="small muted">Чтобы окупаемость считалась верно, называйте канал так же, как источник в заявках и у клиентов («Откуда узнал»).</div>`,
+  { onSubmit: async (d) => { await POST('/api/mk/spend', d); toast('Расход записан'); mkBudget(box, query); } });
+  $$('[data-dsp]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить расход? Если он проведён в Финансах — удалится и там.', 'Удалить')) { await DEL('/api/mk/spend/' + b.dataset.dsp); mkBudget(box, query); } }));
+}
+
+async function mkBase(box, query) {
+  const type = query.type || 'sleeping'; const months = query.months || 6;
+  const rows = await GET('/api/mk/segment' + qs({ type, months, source: query.source }));
+  const SEG = [['sleeping', 'Давно не были'], ['noalarm', 'Без сигнализации (кандидаты на автозапуск)'], ['alarm', 'С сигнализацией (ТО, допы)'], ['birthday', 'День рождения в ближайшие 30 дней'], ['vip', 'Лучшие клиенты'], ['all', 'Вся база']];
+  const tplIdx = { sleeping: 2, noalarm: 1, alarm: 4, birthday: 3, vip: 2, all: 2 }[type];
+  box.innerHTML = `<div class="card"><div class="chips" style="flex-wrap:wrap">${SEG.map(([k, t]) => `<a class="chip ${type === k ? 'on' : ''}" href="#/marketing?tab=base&type=${k}">${t}</a>`).join('')}</div>
+      ${type === 'sleeping' ? `<div class="inline" style="margin-top:8px;gap:8px"><span class="small muted">Не были больше</span><select id="mon">${opts([3, 6, 9, 12, 24].map((x) => [x, x + ' мес.']), +months)}</select></div>` : ''}</div>
+    <div class="card"><div class="inline" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>Клиентов: ${rows.length}</b><span class="sp"></span>
+      <button class="sm" id="cpPh">📋 Скопировать телефоны</button><button class="sm" id="csv">⬇ Скачать CSV</button></div>
+      <div class="field"><label>Текст рассылки</label><select id="tpl">${MK_TEMPLATES.map(([n], i) => `<option value="${i}" ${i === tplIdx ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        <textarea id="tplText" rows="3" style="margin-top:6px">${esc(MK_TEMPLATES[tplIdx][1])}</textarea><div class="small muted">{имя}, {авто}, {телефон} подставятся сами. Кнопка WhatsApp откроет чат с готовым текстом.</div></div>
+      <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Клиент</th><th>Телефон</th><th>Авто</th><th>Последний визит</th><th class="r">Визитов</th><th class="r">Потратил</th><th></th></tr></thead><tbody>
+      ${rows.slice(0, 300).map((c, i) => `<tr><td data-l="Клиент"><a href="#/clients/${c.id}">${esc(c.name)}</a>${c.days_to !== undefined ? ` <span class="badge warn">ДР через ${c.days_to} дн.</span>` : ''}</td><td data-l="Телефон"><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
+        <td data-l="Авто" class="muted">${esc(c.cars || '')}</td><td data-l="Визит">${c.last_visit ? dmy(c.last_visit) : '—'}</td><td data-l="Визитов" class="r">${c.visits || 0}</td><td data-l="Потратил" class="r mono">${c.spent ? rub(c.spent) : '—'}</td>
+        <td><button type="button" class="sm" data-wa="${i}">WhatsApp</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">В этом сегменте пока никого</td></tr>'}</tbody></table></div>
+      ${rows.length > 300 ? '<div class="small muted">Показаны первые 300 — полный список в CSV.</div>' : ''}</div>`;
+  const mon = $('#mon', box); if (mon) mon.onchange = () => go('/marketing' + qs({ tab: 'base', type, months: mon.value }));
+  $('#tpl', box).onchange = (e) => { $('#tplText', box).value = MK_TEMPLATES[+e.target.value][1]; };
+  $('#cpPh', box).onclick = () => copyText(rows.map((c) => c.phone).join('\n'), `Скопировано телефонов: ${rows.length}`);
+  $('#csv', box).onclick = () => {
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '﻿' + [['Имя', 'Телефон', 'Авто', 'Последний визит', 'Визитов', 'Потратил', 'Откуда узнал'].join(';'), ...rows.map((c) => [c.name, c.phone, c.cars, c.last_visit ? dmy(c.last_visit) : '', c.visits, c.spent || 0, c.source].map(q).join(';'))].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `клиенты-${type}-${today()}.csv`; a.click();
+  };
+  $$('[data-wa]', box).forEach((b) => (b.onclick = () => { const c = rows[+b.dataset.wa]; const url = waLink(c.phone, fillTpl($('#tplText', box).value, { name: c.name, car: (c.cars || '').split(',')[0] }));
+    if (url) window.open(url, '_blank'); else toast('У клиента некорректный телефон', true); }));
+}
+
+async function mkReviews(box) {
+  const d = await GET('/api/mk/reviews');
+  const tpl = MK_TEMPLATES[0][1];
+  box.innerHTML = `<div class="card"><h2>Попросить отзыв</h2><div class="small muted" style="margin-bottom:10px">Заказы, выданные за последние 45 дней. Лучшее время попросить отзыв — через 1–3 дня после выдачи. Каждый отзыв в 2ГИС поднимает карточку в поиске.
+      ${d.twogis_url ? '' : '<br><b style="color:var(--warn)">Ссылка на 2ГИС не указана — добавьте её в Настройках → «Отзывы на сайте».</b>'}</div>
+      <div class="tblwrap"><table class="tbl resp"><thead><tr><th>Выдан</th><th>Клиент</th><th>Авто и работы</th><th>Статус</th><th></th></tr></thead><tbody>
+      ${d.orders.map((o, i) => `<tr style="${o.review_asked_at ? 'opacity:.6' : ''}"><td data-l="Выдан">${dmy(o.issued)}</td><td data-l="Клиент"><b>${esc(o.name || '—')}</b><div class="small"><a href="tel:${esc(o.phone || '')}">${esc(o.phone || '')}</a></div></td>
+        <td data-l="Работы" class="small">${esc([o.brand, o.model].filter(Boolean).join(' '))}<div class="muted">${esc(o.works || '')}</div></td>
+        <td data-l="Статус">${o.review_asked_at ? `<span class="badge ok">попросили ${dmy(o.review_asked_at)}</span>` : '<span class="badge warn">не просили</span>'}</td>
+        <td class="nowrap"><button type="button" class="sm" data-rwa="${i}">WhatsApp</button> <button type="button" class="sm" data-rcp="${i}">Текст</button> <button type="button" class="sm ghost" data-rmk="${i}">${o.review_asked_at ? 'Снять отметку' : 'Отметить'}</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Нет выданных заказов за 45 дней</td></tr>'}</tbody></table></div></div>`;
+  const text = (o) => fillTpl(tpl, { name: o.name, twogis: d.twogis_url });
+  const mark = async (o, undo) => { await POST('/api/mk/reviews/' + o.id, { undo }); };
+  $$('[data-rwa]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rwa]; const u = waLink(o.phone, text(o)); if (!u) return toast('Некорректный телефон', true); window.open(u, '_blank'); await mark(o); mkReviews(box); }));
+  $$('[data-rcp]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rcp]; await copyText(text(o), 'Текст скопирован — отправьте клиенту'); await mark(o); mkReviews(box); }));
+  $$('[data-rmk]', box).forEach((b) => (b.onclick = async () => { const o = d.orders[+b.dataset.rmk]; await mark(o, !!o.review_asked_at); mkReviews(box); }));
+}
+
+async function mkTools(box) {
+  const site = location.origin + '/';
+  box.innerHTML = `<div class="grid g2">
+    <div class="card"><h2>Ссылка с меткой для рекламы (UTM)</h2><div class="small muted" style="margin-bottom:8px">Ставьте такую ссылку на сайт в рекламе и постах. Заявка с сайта придёт с источником «Сайт · канал», и в аналитике будет видно, какая реклама работает.</div>
+      <div class="row"><div class="field"><label>Канал (utm_source)</label><input id="us" list="mkch3" value="vk"><datalist id="mkch3">${['vk', 'telegram', 'avito', '2gis', 'yandex', 'instagram', 'max', 'qr', 'listovka'].map((c) => `<option value="${c}">`).join('')}</datalist></div>
+        <div class="field"><label>Кампания (utm_campaign)</label><input id="uc" placeholder="autostart_osen"></div></div>
+      <div class="field"><label>Раздел сайта</label><select id="ua">${opts([['', 'Главная'], ['#alarms', 'Сигнализации'], ['#services', 'Услуги'], ['#order', 'Форма заявки'], ['#reviews', 'Отзывы']], '')}</select></div>
+      <div class="field"><label>Готовая ссылка</label><div class="inline"><input id="uo" readonly><button type="button" class="sm" id="ucp">Копировать</button></div></div>
+      <div id="qr" style="margin-top:8px"></div></div>
+    <div class="card"><h2>Шаблоны сообщений</h2>${MK_TEMPLATES.map(([n, t], i) => `<div class="mk-tpl"><div class="inline" style="justify-content:space-between"><b>${esc(n)}</b><button type="button" class="sm" data-tcp="${i}">Копировать</button></div><div class="small muted">${esc(t)}</div></div>`).join('')}</div>
+    <div class="card"><h2>Где ещё взять клиентов</h2><ul class="mk-list">
+      <li><b>2ГИС и Яндекс Карты</b> — фото работ раз в неделю, ответы на все отзывы, актуальные часы работы.</li>
+      <li><b>Авито</b> — объявления по услугам: «установка автозапуска», «шумоизоляция», «автозвук» с фото до/после.</li>
+      <li><b>ВКонтакте / Telegram</b> — 2–3 поста в неделю из контент-плана, видео процесса работы.</li>
+      <li><b>Партнёры</b> — автосалоны, шиномонтажи, детейлинг: взаимные рекомендации, листовки на стойке.</li>
+      <li><b>Повторные продажи</b> — база «Без сигнализации» перед зимой, «Давно не были» раз в квартал.</li>
+      <li><b>Сарафан</b> — после каждой выдачи просите отзыв (вкладка «Отзывы»).</li></ul></div>
+    <div class="card"><h2>Быстрые ссылки</h2><div class="inline" style="flex-wrap:wrap;gap:8px">
+      <a class="btn sm" href="/" target="_blank">🌐 Сайт</a><a class="btn sm" href="#/leads">📥 Заявки</a><a class="btn sm" href="#/settings">⭐ Отзывы на сайте</a><a class="btn sm" href="#/stock">🏷 Склад (товары на сайте)</a>
+      <a class="btn sm" href="https://2gis.ru" target="_blank" rel="noopener">2ГИС</a><a class="btn sm" href="https://yandex.ru/sprav" target="_blank" rel="noopener">Яндекс Бизнес</a><a class="btn sm" href="https://www.avito.ru/profile" target="_blank" rel="noopener">Авито</a><a class="btn sm" href="https://vk.com/ads" target="_blank" rel="noopener">VK Реклама</a></div></div>
+  </div>`;
+  const upd = () => { const u = new URL(site); if ($('#us', box).value.trim()) u.searchParams.set('utm_source', $('#us', box).value.trim()); if ($('#uc', box).value.trim()) u.searchParams.set('utm_campaign', $('#uc', box).value.trim());
+    const link = u.toString() + $('#ua', box).value; $('#uo', box).value = link; };
+  ['#us', '#uc', '#ua'].forEach((s) => ['input', 'change'].forEach((ev) => $(s, box).addEventListener(ev, upd))); upd();
+  $('#ucp', box).onclick = () => copyText($('#uo', box).value, 'Ссылка скопирована');
+  $$('[data-tcp]', box).forEach((b) => (b.onclick = () => copyText(fillTpl(MK_TEMPLATES[+b.dataset.tcp][1], {}), 'Шаблон скопирован')));
 }
 
 // карточка онлайн-кассы Saby (Нева-01-Ф + терминал Альфа-Банка) в Настройках

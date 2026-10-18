@@ -410,3 +410,39 @@ html.pwa .side { padding-top: max(16px, env(safe-area-inset-top)); }
 .debtchk{display:flex;gap:10px;align-items:flex-start;margin:2px 0 12px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--text)}
 .debtchk input{width:18px;height:18px;flex:none;margin-top:2px}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline dotted}
+
+/* ===== Маркетинг ===== */
+.mk-tabs { margin-bottom: 14px; flex-wrap: wrap; }
+.mk-period input[type=date] { width: auto; }
+.mk-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.mk-kpis .kpi span { display: block; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+.mk-kpis .kpi b { display: block; font-size: 24px; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.mk-kpis .kpi small { color: var(--muted); font-size: 12px; }
+.mk-trend { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; height: 180px; align-items: end; }
+.mk-col { display: flex; flex-direction: column; align-items: center; height: 100%; gap: 4px; }
+.mk-col .bars { flex: 1; width: 100%; display: flex; gap: 2px; align-items: flex-end; justify-content: center; }
+.mk-col .bars i { width: 42%; min-height: 2px; border-radius: 3px 3px 0 0; }
+.mk-col span { font-size: 11px; color: var(--muted); }
+i.rv { background: var(--accent); } i.ld { background: #4ea1ff; }
+.mk-legend { margin-top: 8px; } .mk-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-left: 6px; }
+.mk-hbar { margin-bottom: 10px; font-size: 14px; } .mk-hbar .track { height: 6px; background: var(--line); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.mk-hbar .track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.mk-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 12px; }
+.mk-wd { font-size: 11px; color: var(--muted); text-transform: uppercase; text-align: center; padding: 2px 0; }
+.mk-day { min-height: 92px; border: 1px solid var(--line); border-radius: 8px; padding: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mk-day:hover { border-color: var(--accent); } .mk-day.empty { border: 0; cursor: default; } .mk-day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mk-day .dn { font-size: 12px; color: var(--muted); }
+.mk-post { all: unset; cursor: pointer; font-size: 11px; line-height: 1.3; padding: 3px 5px; border-radius: 5px; background: var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-post b { font-weight: 600; } .mk-post.st-plan { background: color-mix(in srgb, var(--warn) 25%, transparent); } .mk-post.st-ready, .mk-post.st-published { background: color-mix(in srgb, var(--ok) 25%, transparent); }
+.mk-post.st-published { text-decoration: none; opacity: .85; }
+.mk-idea { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.mk-works { display: grid; gap: 10px; max-height: 520px; overflow: auto; }
+.mk-work { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: start; }
+.mk-work img, .mk-work .nop { width: 84px; height: 64px; object-fit: cover; border-radius: 8px; background: var(--line); display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+.mk-work.used { opacity: .6; }
+.mk-roi { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.mk-tpl { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.mk-list { margin: 0; padding-left: 18px; } .mk-list li { margin-bottom: 8px; font-size: 14px; }
+@media (max-width: 900px) { .mk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .mk-day { min-height: 54px; } .mk-post b { display: none; } .mk-post { font-size: 10px; padding: 2px 3px; } .mk-trend { height: 140px; } }
+.mk-idea button { white-space: nowrap; flex: none; }
