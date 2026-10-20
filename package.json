@@ -1,6 +1,6 @@
 {
   "name": "boomcrm",
-  "version": "1.25.2",
+  "version": "1.25.3",
   "description": "CRM для студии автозвука и тюнинга «Бумсистем»",
   "main": "server.js",
   "private": true,
