@@ -570,7 +570,7 @@ function acceptCard(o, office) {
     <div class="field"><label>Личные вещи в салоне</label><input name="accept_items" value="${esc(o.accept_items || '')}" ${dis} placeholder="Детское кресло, зарядка…"></div>
     <div class="field"><label>Фото автомобиля${o.photos.length ? ` (${o.photos.length})` : ''}</label>
       <div class="photos">${o.photos.map((p) => `<button type="button" class="ph" data-ph="${p.id}" title="${esc(dt(p.created_at) + (p.user ? ' · ' + p.user : ''))}"><img loading="lazy" src="/api/photos/${p.id}" alt=""></button>`).join('')}
-      ${office ? '<label class="ph add"><span>📷</span><small>Добавить фото</small><input type="file" accept="image/*" multiple hidden id="phIn"></label>' : (o.photos.length ? '' : '<span class="muted small">Фото нет</span>')}</div>
+      <label class="ph add"><span>📷</span><small>Добавить фото</small><input type="file" accept="image/*" multiple hidden id="phIn"></label></div>
       ${office && o.photos.length && S.me.max_on ? '<button type="button" class="sm" id="phMax" style="margin-top:8px">✉ Отправить фото в MAX</button>' : ''}</div>
     ${office ? `<div class="inline"><button class="primary sm">${o.accept_at ? 'Сохранить' : 'Принять в работу'}</button><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Печать акта</a></div>` : ''}
   </form>`;
@@ -2267,7 +2267,7 @@ route(/^\/users$/, async (page) => {
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Статусы, фото, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
+    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Может добавлять фото в заказ. Статусы, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
