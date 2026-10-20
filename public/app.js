@@ -570,7 +570,7 @@ function acceptCard(o, office) {
     <div class="field"><label>Личные вещи в салоне</label><input name="accept_items" value="${esc(o.accept_items || '')}" ${dis} placeholder="Детское кресло, зарядка…"></div>
     <div class="field"><label>Фото автомобиля${o.photos.length ? ` (${o.photos.length})` : ''}</label>
       <div class="photos">${o.photos.map((p) => `<button type="button" class="ph" data-ph="${p.id}" title="${esc(dt(p.created_at) + (p.user ? ' · ' + p.user : ''))}"><img loading="lazy" src="/api/photos/${p.id}" alt=""></button>`).join('')}
-      <label class="ph add"><span>📷</span><small>Добавить фото</small><input type="file" accept="image/*" multiple hidden id="phIn"></label></div>
+      ${office ? '<label class="ph add"><span>📷</span><small>Добавить фото</small><input type="file" accept="image/*" multiple hidden id="phIn"></label>' : (o.photos.length ? '' : '<span class="muted small">Фото нет</span>')}</div>
       ${office && o.photos.length && S.me.max_on ? '<button type="button" class="sm" id="phMax" style="margin-top:8px">✉ Отправить фото в MAX</button>' : ''}</div>
     ${office ? `<div class="inline"><button class="primary sm">${o.accept_at ? 'Сохранить' : 'Принять в работу'}</button><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Печать акта</a></div>` : ''}
   </form>`;
@@ -668,7 +668,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   ${isEst ? `<div class="card estcard" style="margin-bottom:14px"><div class="inline" style="flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px">Предварительный расчёт</h2>
     <div class="small muted">Цены актуальны на дату обращения — <b>${dmy(o.estimate_at || o.created_at)}</b>. Пока это расчёт: в журнал не попадает, склад не списывается, долги поставщикам не создаются.</div></div>
     ${office ? `<button type="button" class="ghost sm danger" id="estCancel">Клиент отказался</button><button type="button" class="primary" id="estConvert">✅ Клиент согласен — в заказ-наряд</button>` : ''}</div></div>` : ''}
-  <div class="card" style="margin-bottom:14px${isEst ? ';display:none' : ''}"><h3>Статус</h3><div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>
+  <div class="card" style="margin-bottom:14px${isEst ? ';display:none' : ''}"><h3>Статус</h3>${office ? `<div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>` : `<span class="badge">${esc(S.me.statuses[o.status] || o.status)}</span> <span class="muted small">— статус меняет руководитель</span>`}
     ${o.status === 'done' && office && t.due > 0.5 ? `<div class="small" style="margin-top:8px;color:var(--warn)">Перед выдачей примите оплату: к оплате ${rub(t.due)}</div>` : ''}</div>
   <div class="grid g-main"><div>
     <div class="card"><h2>Работы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Услуга</th><th>Мастер</th><th>Кол-во</th><th>Цена</th><th class="r">Сумма</th><th title="Гарантия, мес.">Гар., мес</th>${office ? '<th></th>' : ''}</tr></thead>
@@ -716,7 +716,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       ${office ? '<button class="primary">Сохранить</button>' : ''}
       ${isAdmin() ? '<button type="button" class="ghost danger sm" id="delOrder" style="float:right">Удалить заказ</button>' : ''}
     </form>
-    <div class="card"><h2>История</h2><div class="inline" style="margin-bottom:8px;flex-wrap:nowrap"><input id="cmt" placeholder="Комментарий…"><button type="button" class="sm" id="addCmt">→</button></div>
+    <div class="card"><h2>История</h2>${office ? '<div class="inline" style="margin-bottom:8px;flex-wrap:nowrap"><input id="cmt" placeholder="Комментарий…"><button type="button" class="sm" id="addCmt">→</button></div>' : ''}
       <div class="log">${o.log.map((l) => `<div>${esc(l.text)}<div class="muted">${dt(l.created_at)} · ${esc(l.user || 'система')}</div></div>`).join('')}</div></div>
   </div></div>`;
 
@@ -738,11 +738,13 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     const m = modal('Какой товар принимаем?', `<div class="list">${pr.map((i, n) => `<div class="li click" data-pi="${n}"><div class="grow t">${esc(i.name)}</div></div>`).join('')}<div class="li click" data-pi="-1"><div class="grow muted">Другой товар…</div></div></div>`, { footer: '<button type="button" data-x>Отмена</button>' });
     $$('[data-pi]', m.el).forEach((e) => (e.onclick = () => { m.close(); pick(pr[+e.dataset.pi]); }));
   };
-  $('#addCmt', page).onclick = async () => {
-    const v = $('#cmt', page).value.trim(); if (!v) return;
-    await POST(`/api/orders/${o.id}/comment`, { text: v }); reload();
-  };
-  $('#cmt', page).onkeydown = (e) => { if (e.key === 'Enter') $('#addCmt', page).click(); };
+  if ($('#addCmt', page)) {
+    $('#addCmt', page).onclick = async () => {
+      const v = $('#cmt', page).value.trim(); if (!v) return;
+      await POST(`/api/orders/${o.id}/comment`, { text: v }); reload();
+    };
+    $('#cmt', page).onkeydown = (e) => { if (e.key === 'Enter') $('#addCmt', page).click(); };
+  }
   bindPhotos(page, o, reload, office);
   if (!office) return;
   if (o.scheduled_at) markMasters(page, o.scheduled_at, o.end_date);
@@ -2194,7 +2196,7 @@ route(/^\/salary$/, async (page, query) => {
       <div class="grid g4"><div class="kpi"><div class="l">Работы${u.adj_sum ? ' · премии/удерж.' : ''}</div><div class="v" style="font-size:18px">${rub(u.works_sum)}${u.adj_sum ? ` <span class="small" style="color:${u.adj_sum > 0 ? 'var(--ok)' : 'var(--bad)'}">${u.adj_sum > 0 ? '+' : '−'}${rub(Math.abs(u.adj_sum))}</span>` : ''}</div></div><div class="kpi"><div class="l">Начислено</div><div class="v acc" style="font-size:18px">${rub(u.accrued)}</div></div>
       <div class="kpi"><div class="l">Выплачено</div><div class="v" style="font-size:18px">${rub(u.paid)}</div></div><div class="kpi"><div class="l">К выплате</div><div class="v ${u.due > 0 ? 'ok' : ''}" style="font-size:18px">${rub(u.due)}</div></div></div>
       ${u.adjustments.length ? `<table class="tbl" style="margin-top:10px"><tbody>${u.adjustments.map((a) => `<tr><td class="nowrap">${dmy(a.date)}</td><td>${a.amount > 0 ? 'Премия' : 'Удержание'}: ${esc(a.note || '')}</td><td class="r mono" style="color:${a.amount > 0 ? 'var(--ok)' : 'var(--bad)'}">${a.amount > 0 ? '+' : '−'}${rub(Math.abs(a.amount))}</td>${isAdmin() ? `<td style="width:40px"><button class="ghost sm danger" data-deladj="${a.id}">✕</button></td>` : ''}</tr>`).join('')}</tbody></table>` : ''}
-      ${u.works.length ? `<details style="margin-top:10px" ${isAdmin() ? '' : ''}><summary class="muted" style="cursor:pointer">Выполненные работы (${u.works.length})${isAdmin() ? ' — нажмите ✎, чтобы изменить начисление' : ''}</summary><table class="tbl" style="margin-top:6px"><tbody>${u.works.map((w) => `<tr><td class="nowrap">${dmy(w.issued_at)}</td><td><a href="#/orders/${w.order_id}">${orderNo(w.order_id)}</a></td><td>${esc(w.name)}${w.manual ? `<div class="small" style="color:var(--warn)">изменено вручную${w.note ? ': ' + esc(w.note) : ''}</div>` : ''}</td><td class="r mono muted">${rub(w.sum)}</td><td class="r muted">${w.manual ? '' : w.percent + '%'}</td><td class="r mono">${rub(w.amount)}</td>${isAdmin() ? `<td style="width:40px"><button class="ghost sm" data-acc="${w.id}" data-amount="${w.amount}" data-manual="${w.manual}" data-calc="${Math.round(w.sum * w.percent) / 100}" title="Изменить сумму">✎</button></td>` : ''}</tr>`).join('')}</tbody></table></details>` : ''}
+      ${u.works.length ? `<details style="margin-top:10px" ${isOffice() ? '' : 'open'}><summary class="muted" style="cursor:pointer">Выполненные работы (${u.works.length})${isAdmin() ? ' — нажмите ✎, чтобы изменить начисление' : ''}</summary><table class="tbl" style="margin-top:6px"><tbody>${u.works.map((w) => `<tr><td class="nowrap">${dmy(w.issued_at)}</td><td><a href="#/orders/${w.order_id}">${orderNo(w.order_id)}</a></td><td>${esc(w.name)}${w.manual ? `<div class="small" style="color:var(--warn)">изменено вручную${w.note ? ': ' + esc(w.note) : ''}</div>` : ''}</td><td class="r mono muted">${rub(w.sum)}</td><td class="r muted">${w.manual ? '' : w.percent + '%'}</td><td class="r mono">${rub(w.amount)}</td>${isAdmin() ? `<td style="width:40px"><button class="ghost sm" data-acc="${w.id}" data-amount="${w.amount}" data-manual="${w.manual}" data-calc="${Math.round(w.sum * w.percent) / 100}" title="Изменить сумму">✎</button></td>` : ''}</tr>`).join('')}</tbody></table></details>` : ''}
     </div>`).join('') : '<div class="card empty">Нет начислений за период</div>'}`;
   bindPeriod(page, (f, t) => go('/salary' + qs({ from: f, to: t })));
   $$('[data-acc]', page).forEach((b) => (b.onclick = () => modal('Изменить начисление', `
@@ -2265,7 +2267,7 @@ route(/^\/users$/, async (page) => {
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только свои заказы и календарь, смена статусов «В работе / Ждёт запчасти / Готов», своя зарплата.<br>
+    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Статусы, фото, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
