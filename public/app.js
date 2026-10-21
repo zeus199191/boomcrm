@@ -2204,13 +2204,13 @@ async function loadSabyCard(page) {
     let pts; try { pts = (await POST('/api/saby/test', {})).points; } catch (e) { pick.innerHTML = `<div class="small" style="color:var(--bad)">${esc(e.message)}</div>`; return; }
     if (!pts.length) { pick.innerHTML = '<div class="small" style="color:var(--bad)">Связь есть, но точек продаж не найдено. Проверьте, что у приложения есть доступ к разделу «Бизнес / Розница» и что касса подключена к точке.</div>'; return; }
     pick.innerHTML = `<div class="row"><div class="field"><label>Точка продаж</label><select id="sbPt">${pts.map((p) => `<option value="${p.id}" ${String(p.id) === a.saby_point_id ? 'selected' : ''}>${esc(p.name || p.id)}${p.address ? ' — ' + esc(p.address) : ''}</option>`).join('')}</select></div>
-      <div class="field"><label>Прайс-лист</label><select id="sbPl"></select></div></div>
+      <div class="field"><label>Прайс-лист</label><select id="sbPl"></select><div id="sbPlErr" class="small" style="color:var(--warn);margin-top:4px"></div></div></div>
       <div class="field"><label>Позиция Saby, через которую пробиваются услуги и товары (например «Услуги автосервиса»)</label><div class="inline"><input id="sbQ" placeholder="Поиск по каталогу Saby"><button type="button" id="sbFind">Найти</button></div><div id="sbNoms" class="small" style="margin-top:6px"></div></div>`;
     const loadPl = async () => {
       const pl = $('#sbPl', pick); pl.innerHTML = '<option>…</option>';
       try { const list = await GET('/api/saby/prices' + qs({ pointId: $('#sbPt', pick).value })); const p = pts.find((x) => String(x.id) === $('#sbPt', pick).value);
         pl.innerHTML = list.map((x) => `<option value="${x.id}" ${String(x.id) === (a.saby_price_list_id || String(p?.defaultPriceList || '')) ? 'selected' : ''}>${esc(x.name)}</option>`).join('') || '<option value="">Прайс-листов нет</option>'; }
-      catch (e) { pl.innerHTML = '<option value="">ошибка</option>'; toast(e.message, true); }
+      catch (e) { pl.innerHTML = '<option value="">— не загрузились —</option>'; const er = $('#sbPlErr', pick); if (er) er.textContent = e.message; toast(e.message, true); }
     };
     $('#sbPt', pick).onchange = loadPl; await loadPl();
     const find = async () => {
@@ -2219,6 +2219,7 @@ async function loadSabyCard(page) {
         out.innerHTML = list.length ? list.map((x, i) => `<div class="inline" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0"><span>${esc(x.name)} <span class="muted">${x.cost ? rub(x.cost) : ''}</span></span><button type="button" class="sm" data-nom="${i}">Выбрать</button></div>`).join('') : 'Ничего не найдено — создайте в Saby услугу «Услуги автосервиса» с ценой 0 и найдите её здесь.';
         $$('[data-nom]', out).forEach((b) => (b.onclick = async () => {
           const n = list[+b.dataset.nom]; const pt = $('#sbPt', pick), pl = $('#sbPl', pick);
+          if (!pl.value) { toast('Сначала должен загрузиться прайс-лист точки продаж', true); return; }
           try { await PUT('/api/saby', { saby_point_id: pt.value, saby_point_name: pt.selectedOptions[0]?.textContent || '', saby_price_list_id: pl.value, saby_price_list_name: pl.selectedOptions[0]?.textContent || '', saby_nom: n });
             toast('Касса Saby настроена'); loadSabyCard(page); S.me.saby_on = true; } catch (e) { toast(e.message, true); }
         }));
