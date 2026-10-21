@@ -1084,11 +1084,12 @@ route(/^\/stock$/, async (page) => {
   let low = false, scope = 'stock', cat = '';
   page.innerHTML = `<div class="topbar"><h1>Склад</h1><span class="muted" id="sum"></span><div class="sp"></div>
     <input class="search" id="q" placeholder="Название, артикул, бренд">
-    <button id="moves">Движения</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
+    <button id="moves">Движения</button><button id="sabyPx" title="Выгрузить розничный прайс в Excel для загрузки в Saby">⬇ Прайс для Saby</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
     <div class="inline" style="margin-bottom:12px"><div class="chips"><button class="chip on" data-sc="stock">На складе</button><button class="chip" data-sc="all">Весь каталог</button><button class="chip" data-sc="site" title="Товары, которые показываются на сайте ателье">На сайте</button><button class="chip" id="low">Заканчиваются</button></div>
     <select id="cat" style="width:auto;max-width:280px"><option value="">Все категории</option></select></div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
   $$('[data-sc]', page).forEach((b) => (b.onclick = () => { scope = b.dataset.sc; $$('[data-sc]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
+  $('#sabyPx', page).onclick = () => sabyPriceModal();
   $('#cat', page).onchange = (e) => { cat = e.target.value; load(); };
   $('#pricex', page).onclick = () => {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx';
@@ -1200,6 +1201,21 @@ route(/^\/stock$/, async (page) => {
 // ================= Комплексы (готовые пакеты работ и товаров) =================
 const svcTabs = (cur) => `<div class="chips" style="margin:0 0 0 12px">${[['svc', 'Прайс', '/services'], ['pkg', '📦 Комплексы', '/packages']].map(([k, t, h]) => `<a class="chip ${k === cur ? 'on' : ''}" href="#${h}" style="text-decoration:none">${t}</a>`).join('')}</div>`;
 const pkgItemsHtml = (p) => p.items.map((i) => `<div class="small" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;${i.missing ? 'opacity:.5;text-decoration:line-through' : ''}"><span>${i.kind === 'product' ? '📦' : '🔧'} ${esc(i.name || '—')}${i.qty !== 1 ? ' × ' + i.qty : ''}</span><span class="mono muted nowrap">${rub(i.eff_price * i.qty)}</span></div>`).join('');
+// Выгрузка розничного прайса (товары + услуги) в Excel для Saby
+function sabyPriceModal() {
+  let vat = 'none'; try { vat = localStorage.getItem('sabyVat') || 'none'; } catch {}
+  modal('Прайс для Saby', `<div class="small muted" style="margin-bottom:10px">Файл Excel с розничными ценами из CRM. В Saby: <b>Склад → «+» → Загрузить → Номенклатуру → Из файла</b>.
+    У каждой позиции постоянный «Код товара» (Т… — товар, У… — услуга), поэтому при повторной загрузке выберите «Только дополнения и изменения» — Saby обновит цены и не создаст дубли.</div>
+    <div class="checkgrid" style="margin-bottom:10px"><label class="ck"><input type="checkbox" name="goods" checked> Товары со склада</label><label class="ck"><input type="checkbox" name="services" checked> Услуги (прайс работ)</label>
+    <label class="ck"><input type="checkbox" name="stock"> Только товары в наличии</label><label class="ck"><input type="checkbox" name="zero"> Включить позиции без цены</label></div>
+    <div class="field" style="max-width:260px"><label>НДС</label><select name="vat">${opts([['none', 'Без НДС'], ['0', '0%'], ['5', '5%'], ['7', '7%'], ['10', '10%'], ['20', '20%'], ['22', '22%']], vat)}</select></div>`,
+  { submit: '⬇ Скачать Excel', onSubmit: (d) => {
+    if (!d.goods && !d.services) { toast('Отметьте товары или услуги', true); return false; }
+    try { localStorage.setItem('sabyVat', d.vat); } catch {}
+    const a = document.createElement('a'); a.href = '/api/export/price.xlsx' + qs({ goods: d.goods ? 1 : 0, services: d.services ? 1 : 0, stock: d.stock ? 1 : 0, zero: d.zero ? 1 : 0, vat: d.vat });
+    a.download = ''; document.body.append(a); a.click(); a.remove(); toast('Файл скачивается');
+  } });
+}
 route(/^\/packages$/, async (page) => {
   const list = await GET('/api/packages');
   const adm = isAdmin();
@@ -1269,7 +1285,7 @@ async function pickPackage(o, reload) {
 route(/^\/services$/, async (page) => {
   const list = await GET('/api/services'); S.services = list;
   const cats = [...new Set(list.map((s) => s.category || 'Без категории'))];
-  page.innerHTML = `<div class="topbar"><h1>Услуги и цены</h1>${svcTabs('svc')}<div class="sp"></div><input class="search" id="q" placeholder="Поиск услуги"><button class="primary" id="add">+ Услуга</button></div>
+  page.innerHTML = `<div class="topbar"><h1>Услуги и цены</h1>${svcTabs('svc')}<div class="sp"></div><input class="search" id="q" placeholder="Поиск услуги"><button id="sabyPx" title="Выгрузить розничный прайс в Excel для загрузки в Saby">⬇ Прайс для Saby</button><button class="primary" id="add">+ Услуга</button></div>
     <div id="list">${cats.map((c) => `<div class="card" data-cat><h3>${esc(c)}</h3><table class="tbl resp"><thead><tr><th>Услуга</th><th class="r">Цена</th><th class="r">Время</th><th class="r">Гарантия</th></tr></thead><tbody>
       ${list.filter((s) => (s.category || 'Без категории') === c).map((s) => `<tr class="click" data-id="${s.id}" data-n="${esc(s.name.toLowerCase())}" style="${s.active ? '' : 'opacity:.45'}"><td data-l="Услуга">${esc(s.name)}</td><td data-l="Цена" class="r mono">${rub(s.price)}</td>
       <td data-l="Время" class="r muted">${s.duration_min >= 60 ? (s.duration_min / 60).toLocaleString('ru-RU') + ' ч' : s.duration_min + ' мин'}</td><td data-l="Гарантия" class="r muted">${s.warranty_months ? s.warranty_months + ' мес.' : '—'}</td></tr>`).join('')}
@@ -1282,6 +1298,7 @@ route(/^\/services$/, async (page) => {
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${s.active ? 'checked' : ''}> Активна</label>`,
   { onSubmit: async (d) => { if (s.id) await PUT('/api/services/' + s.id, d); else await POST('/api/services', { ...d }); S.services = null; navigate(); } });
   $('#add', page).onclick = () => svcModal();
+  $('#sabyPx', page).onclick = () => sabyPriceModal();
   $('#list', page).onclick = (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) svcModal(list.find((x) => x.id === +tr.dataset.id)); };
   $('#q', page).oninput = (e) => {
     const q = e.target.value.toLowerCase();
