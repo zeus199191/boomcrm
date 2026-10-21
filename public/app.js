@@ -245,7 +245,7 @@ function renderShell() {
 function setActiveNav(path) {
   let title = '';
   $$('.nav a, .tabbar a[data-p]').forEach((a) => {
-    const p = a.dataset.p; const on = p === '/' ? path === '/' : path.startsWith(p);
+    const p = a.dataset.p; const on = p === '/' ? path === '/' : path.startsWith(p) || (p === '/services' && path === '/packages');
     a.classList.toggle('active', on); if (on && !title) title = a.title || a.textContent.trim();
   });
   const mb = $('.mobilebar b'); if (mb) mb.textContent = title && path !== '/' ? title : S.me.company;
@@ -673,7 +673,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   <div class="grid g-main"><div>
     <div class="card"><h2>Работы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Услуга</th><th>Мастер</th><th>Кол-во</th><th>Цена</th><th class="r">Сумма</th><th title="Гарантия, мес.">Гар., мес</th>${office ? '<th></th>' : ''}</tr></thead>
       <tbody>${itemRows(svc, 'service') || `<tr><td colspan="7" class="muted">Работ пока нет</td></tr>`}</tbody></table></div>
-      ${office ? `<div style="margin-top:10px"><div><input id="addSvc" placeholder="+ Добавить работу: начните вводить название из прайса или своё"></div></div>` : ''}</div>
+      ${office ? `<div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><input id="addSvc" placeholder="+ Добавить работу: начните вводить название из прайса или своё"></div>${['issued', 'cancelled'].includes(o.status) ? '' : '<button type="button" id="addPkg" title="Добавить готовый комплекс работ и товаров" style="white-space:nowrap">📦 Комплекс</button>'}</div>` : ''}</div>
     <div class="card"><h2>Товары и материалы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th class="r">Сумма</th><th title="Гарантия, мес.">Гар., мес</th>${office ? '<th></th>' : ''}</tr></thead>
       <tbody>${itemRows(prd, 'product') || `<tr><td colspan="6" class="muted">Товаров нет</td></tr>`}</tbody></table></div>
       ${office ? `<div style="margin-top:10px"><div><input id="addPrd" placeholder="+ Добавить товар со склада: название, артикул, бренд"></div></div>` : ''}
@@ -787,6 +787,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     await DEL('/api/order-items/' + b.dataset.del); reload();
   }));
   $('#disc', page).onchange = async (e) => { await PUT('/api/orders/' + o.id, { discount_percent: e.target.value }); reload(); };
+  const apk = $('#addPkg', page); if (apk) apk.onclick = () => pickPackage(o, reload);
   const svcList = await services();
   autocomplete($('#addSvc', page), {
     minLen: 0,
@@ -1196,10 +1197,79 @@ route(/^\/stock$/, async (page) => {
 });
 
 // ================= Услуги =================
+// ================= Комплексы (готовые пакеты работ и товаров) =================
+const svcTabs = (cur) => `<div class="chips" style="margin:0 0 0 12px">${[['svc', 'Прайс', '/services'], ['pkg', '📦 Комплексы', '/packages']].map(([k, t, h]) => `<a class="chip ${k === cur ? 'on' : ''}" href="#${h}" style="text-decoration:none">${t}</a>`).join('')}</div>`;
+const pkgItemsHtml = (p) => p.items.map((i) => `<div class="small" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;${i.missing ? 'opacity:.5;text-decoration:line-through' : ''}"><span>${i.kind === 'product' ? '📦' : '🔧'} ${esc(i.name || '—')}${i.qty !== 1 ? ' × ' + i.qty : ''}</span><span class="mono muted nowrap">${rub(i.eff_price * i.qty)}</span></div>`).join('');
+route(/^\/packages$/, async (page) => {
+  const list = await GET('/api/packages');
+  const adm = isAdmin();
+  page.innerHTML = `<div class="topbar"><h1>Услуги и цены</h1>${svcTabs('pkg')}<div class="sp"></div>${adm ? '<button class="primary" id="add">+ Комплекс</button>' : ''}</div>
+    <div class="small muted" style="margin:-4px 0 12px">Готовые наборы работ и товаров. В заказ-наряде кнопка «📦 Комплекс» добавляет все позиции сразу — потом их можно поправить как обычно.${adm ? '' : ' Создавать и менять комплексы могут руководители и администратор.'}</div>
+    ${list.length ? `<div class="grid g3">${list.map((p) => `<div class="card ${adm ? 'click' : ''}" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><b style="font-size:16px;line-height:1.3">${esc(p.name)}</b>${p.active ? '' : '<span class="badge">скрыт</span>'}</div>
+      ${p.description ? `<div class="small muted" style="margin:4px 0 6px">${esc(p.description)}</div>` : ''}
+      <div style="margin:8px 0">${pkgItemsHtml(p)}</div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px"><span class="muted">Итого</span><b class="mono">${rub(p.total)}</b></div></div>`).join('')}</div>`
+      : `<div class="card empty">Комплексов пока нет.${adm ? ' Нажмите «+ Комплекс», например: «Сигнализация + автозапуск + метка» или «Шумоизоляция дверей + акустика».' : ''}</div>`}`;
+  if (!adm) return;
+  $('#add', page).onclick = () => packageModal();
+  $$('[data-id]', page).forEach((c) => (c.onclick = () => packageModal(list.find((x) => x.id === +c.dataset.id))));
+});
+async function packageModal(p = { active: 1, items: [] }) {
+  let items = p.items.map((i) => ({ kind: i.kind, ref_id: i.ref_id, name: i.name, qty: i.qty, price: i.price ?? '', base: i.base_price, missing: i.missing }));
+  const m = modal(p.id ? 'Комплекс' : 'Новый комплекс', `
+    <div class="field"><label>Название *</label><input name="name" required value="${esc(p.name || '')}" placeholder="Например: Сигнализация StarLine S96 под ключ"></div>
+    <div class="field"><label>Описание (для себя и для клиента)</label><input name="description" value="${esc(p.description || '')}" placeholder="Что входит, для каких машин"></div>
+    <div class="field"><label>Состав</label><div class="tblwrap"><table class="tbl"><thead><tr><th>Позиция</th><th style="width:80px">Кол-во</th><th style="width:130px">Цена, ₽</th><th class="r" style="width:110px">Сумма</th><th style="width:36px"></th></tr></thead><tbody id="pkI"></tbody></table></div>
+      <div class="row" style="margin-top:8px"><div class="field"><input id="pkSvc" placeholder="+ Работа из прайса"></div><div class="field"><input id="pkPrd" placeholder="+ Товар со склада"></div></div>
+      <div class="small muted">Цена пустая — берётся текущая цена из прайса или склада. Укажите свою, если в комплексе цена особая (например, со скидкой).</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px"><label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Показывать в заказах</label><b>Итого: <span id="pkT" class="mono"></span></b></div>`,
+  { wide: true, footer: `${p.id ? '<button type="button" class="ghost danger" data-del style="margin-right:auto">Удалить</button>' : ''}<button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>`,
+    onSubmit: async (d) => {
+      if (!items.length) { toast('Добавьте работу или товар', true); return false; }
+      const body = { name: d.name, description: d.description, active: d.active, items: items.map((i) => ({ kind: i.kind, ref_id: i.ref_id, name: i.name, qty: i.qty, price: i.price })) };
+      if (p.id) await PUT('/api/packages/' + p.id, body); else await POST('/api/packages', body);
+      toast('Комплекс сохранён'); navigate();
+    } });
+  const f = m.form;
+  const draw = () => {
+    $('#pkI', f).innerHTML = items.map((i, n) => { const pr = i.price === '' || i.price === null ? (i.base || 0) : +i.price;
+      return `<tr style="${i.missing ? 'opacity:.5' : ''}"><td>${i.kind === 'product' ? '📦' : '🔧'} ${esc(i.name)}${i.missing ? ' <span class="badge">нет в каталоге</span>' : ''}</td>
+      <td><input type="number" step="any" min="0" value="${i.qty}" data-q="${n}"></td><td><input type="number" step="any" min="0" value="${i.price ?? ''}" placeholder="${i.base ?? 0}" data-p="${n}"></td>
+      <td class="r mono">${rub(pr * (+i.qty || 0))}</td><td><button type="button" class="ghost sm danger" data-rm="${n}">✕</button></td></tr>`; }).join('') || '<tr><td colspan="5" class="muted">Пока пусто — добавьте позиции ниже</td></tr>';
+    $('#pkT', f).textContent = rub(items.reduce((s, i) => s + (i.price === '' || i.price === null ? (i.base || 0) : +i.price) * (+i.qty || 0), 0));
+    $$('[data-q]', f).forEach((x) => (x.onchange = () => { items[+x.dataset.q].qty = +x.value || 1; draw(); }));
+    $$('[data-p]', f).forEach((x) => (x.onchange = () => { items[+x.dataset.p].price = x.value; draw(); }));
+    $$('[data-rm]', f).forEach((x) => (x.onclick = () => { items.splice(+x.dataset.rm, 1); draw(); }));
+  };
+  draw();
+  const svcList = await services();
+  autocomplete($('#pkSvc', f), { minLen: 0,
+    search: async (q) => svcList.filter((s) => s.active && (s.name + ' ' + (s.category || '')).toLowerCase().includes(q.toLowerCase())).slice(0, 15),
+    render: (s) => `<div>${esc(s.name)}</div><div class="s">${esc(s.category || '')} · ${rub(s.price)}</div>`,
+    onPick: (s) => { items.push({ kind: 'service', ref_id: s.id, name: s.name, qty: 1, price: '', base: s.price }); $('#pkSvc', f).value = ''; draw(); } });
+  autocomplete($('#pkPrd', f), {
+    search: (q) => GET('/api/products' + qs({ q })).then((r) => r.slice(0, 15)),
+    render: (x) => `<div>${esc(x.name)}</div><div class="s">${rub(x.price)} · остаток ${x.stock ?? 0}</div>`,
+    onPick: (x) => { items.push({ kind: 'product', ref_id: x.id, name: x.name, qty: 1, price: '', base: x.price }); $('#pkPrd', f).value = ''; draw(); } });
+  const del = $('[data-del]', f);
+  if (del) del.onclick = async () => { if (!(await confirmBox(`Удалить комплекс «${p.name}»? В уже созданных заказах позиции останутся.`, 'Удалить'))) return; await DEL('/api/packages/' + p.id); m.close(); toast('Комплекс удалён'); navigate(); };
+}
+async function pickPackage(o, reload) {
+  const list = (await GET('/api/packages')).filter((p) => p.active);
+  const m = modal('Добавить комплекс', list.length ? `<div class="list">${list.map((p) => `<div class="li click" data-pk="${p.id}" style="display:block;padding:12px 10px">
+      <div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(p.name)}</b><b class="mono nowrap">${rub(p.total)}</b></div>
+      ${p.description ? `<div class="small muted">${esc(p.description)}</div>` : ''}<div style="margin-top:4px">${pkgItemsHtml(p)}</div></div>`).join('')}</div>`
+    : `<div class="empty">Комплексов пока нет. ${isAdmin() ? '<a href="#/packages">Создать комплекс</a>' : 'Их создают руководители в «Услуги и цены» → «Комплексы».'}</div>`, { wide: true, footer: '<button type="button" data-x>Закрыть</button>' });
+  $$('[data-pk]', m.el).forEach((el) => (el.onclick = async () => {
+    try { const r = await POST(`/api/orders/${o.id}/package`, { package_id: +el.dataset.pk }); m.close(); toast(`Добавлено позиций: ${r.added}${r.skipped ? ` (пропущено ${r.skipped} — нет в каталоге)` : ''}`); reload(); } catch (e) { toast(e.message, true); }
+  }));
+}
+
 route(/^\/services$/, async (page) => {
   const list = await GET('/api/services'); S.services = list;
   const cats = [...new Set(list.map((s) => s.category || 'Без категории'))];
-  page.innerHTML = `<div class="topbar"><h1>Услуги и цены</h1><div class="sp"></div><input class="search" id="q" placeholder="Поиск услуги"><button class="primary" id="add">+ Услуга</button></div>
+  page.innerHTML = `<div class="topbar"><h1>Услуги и цены</h1>${svcTabs('svc')}<div class="sp"></div><input class="search" id="q" placeholder="Поиск услуги"><button class="primary" id="add">+ Услуга</button></div>
     <div id="list">${cats.map((c) => `<div class="card" data-cat><h3>${esc(c)}</h3><table class="tbl resp"><thead><tr><th>Услуга</th><th class="r">Цена</th><th class="r">Время</th><th class="r">Гарантия</th></tr></thead><tbody>
       ${list.filter((s) => (s.category || 'Без категории') === c).map((s) => `<tr class="click" data-id="${s.id}" data-n="${esc(s.name.toLowerCase())}" style="${s.active ? '' : 'opacity:.45'}"><td data-l="Услуга">${esc(s.name)}</td><td data-l="Цена" class="r mono">${rub(s.price)}</td>
       <td data-l="Время" class="r muted">${s.duration_min >= 60 ? (s.duration_min / 60).toLocaleString('ru-RU') + ' ч' : s.duration_min + ' мин'}</td><td data-l="Гарантия" class="r muted">${s.warranty_months ? s.warranty_months + ' мес.' : '—'}</td></tr>`).join('')}
