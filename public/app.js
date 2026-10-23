@@ -690,7 +690,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     </div>
     ${(o.saby || []).length ? `<div class="saby-box">${o.saby.map((x) => `<div class="saby-row ${x.status}">
       <div><b>${x.status === 'pending' ? '⏳ Ждёт оплаты на кассе Saby' : x.status === 'paid' ? '✅ Оплачено на кассе Saby' : '✖ Отменено на кассе'}</b> · <span class="mono">${rub(x.status === 'paid' ? x.paid : x.amount)}</span>
-      <div class="small muted">отправлено ${dt(x.created_at)}${x.status === 'pending' ? ' · на кассе откройте «Заказы» → этот заказ → оплата картой' : ''}${x.error ? ` · <span style="color:var(--bad)">${esc(x.error)}</span>` : ''}</div></div>
+      <div class="small muted">отправлено ${dt(x.created_at)}${x.status === 'pending' ? ' · на кассе откройте «Заказы» → этот заказ → ' + ({ cash: 'оплата наличными', card: 'оплата безналичными (перевод)' }[x.req_method] || 'оплата картой') : ''}${x.error ? ` · <span style="color:var(--bad)">${esc(x.error)}</span>` : ''}</div></div>
       ${x.status === 'pending' ? `<div class="inline" style="gap:6px"><button type="button" class="sm" data-sbc="${x.id}">Проверить</button><button type="button" class="sm ghost danger" data-sbx="${x.id}">Отменить</button></div>` : ''}</div>`).join('')}</div>` : ''}
     ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}${p.acquiring ? `<div class="small">эквайринг −${rub(p.acquiring)} (наш расход)</div>` : ''}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
@@ -823,16 +823,16 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required value="${refund ? '' : Math.max(t.due, 0)}"></div>
     <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(refund ? { ...PAY_IN, transfer: 'С расчётного счёта' } : PAY_IN), 'cash')}</select></div></div>
     ${refund ? '' : `<div class="small muted" id="pmHint" style="margin:-4px 0 8px"></div>`}
-    ${!refund && S.me.saby_on ? `<label id="pmSaby" style="display:flex;gap:10px;align-items:flex-start;color:var(--text);margin:0 0 12px;cursor:pointer"><input type="checkbox" name="saby" checked style="width:18px;height:18px;flex:none;margin-top:2px"><span>Провести через кассу Saby — сумма уйдёт на кассу и терминал Альфа-Банка, чек пробьётся автоматически</span></label>` : ''}
+    ${!refund && S.me.saby_on ? `<label id="pmSaby" style="display:flex;gap:10px;align-items:flex-start;color:var(--text);margin:0 0 12px;cursor:pointer"><input type="checkbox" name="saby" checked style="width:18px;height:18px;flex:none;margin-top:2px"><span id="pmSabyT">Провести через кассу Saby</span></label>` : ''}
     <div class="field"><label>Комментарий</label><input name="note"></div>`,
   { onOpen: (f) => { const h = $('#pmHint', f); if (!h) return; const u = () => { const v = f.method.value, a = +f.amount.value || 0, pct = S.me.acquiring_percent ?? 2;
       h.textContent = v === 'terminal' ? `Зачислится на расчётный счёт. Эквайринг ${pct}% (${rub(a * pct / 100)}) — наш расход, клиент платит ${rub(a)}.` : v === 'card' ? 'Зачислится в кассу «Карта», без эквайринга.' : 'Зачислится в кассу «Наличные».'; };
-      const sb = $('#pmSaby', f); const us = () => { if (sb) sb.style.display = f.method.value === 'terminal' ? '' : 'none'; };
+      const sb = $('#pmSaby', f); const us = () => { if (!sb) return; $('#pmSabyT', f).textContent = { terminal: 'Провести через кассу Saby — сумма уйдёт на кассу и терминал Альфа-Банка, касса напечатает чек', cash: 'Пробить чек на кассе Saby — заказ уйдёт на кассу, кассир примет наличные, касса напечатает чек', card: 'Пробить чек на кассе Saby — заказ уйдёт на кассу, кассир закроет его оплатой безналичными (перевод), касса напечатает чек' }[f.method.value] || 'Провести через кассу Saby'; };
       f.method.onchange = () => { u(); us(); }; f.amount.oninput = u; u(); us(); },
     submit: refund ? 'Оформить возврат' : 'Принять', onSubmit: async (d) => {
-      if (!refund && d.saby && d.method === 'terminal') {
-        await POST(`/api/orders/${o.id}/saby`, { amount: d.amount });
-        toast('Отправлено на кассу. На кассе: «Заказы» → ' + o.number + ' → оплата картой. CRM запишет оплату сама.'); return reload();
+      if (!refund && d.saby) {
+        await POST(`/api/orders/${o.id}/saby`, { amount: d.amount, method: d.method });
+        toast('Отправлено на кассу. На кассе: «Заказы» → ' + o.number + ' → ' + ({ terminal: 'оплата картой', cash: 'оплата наличными', card: 'оплата безналичными (перевод)' }[d.method] || 'оплата') + '. CRM запишет оплату сама.'); return reload();
       }
       await POST(`/api/orders/${o.id}/pay`, { ...d, refund }); toast(refund ? 'Возврат проведён' : 'Оплата принята'); reload(); } });
   $$('[data-sbc]', page).forEach((b) => (b.onclick = async () => { try { const r = await POST(`/api/saby/${b.dataset.sbc}/check`, {}); toast(r.status === 'paid' ? 'Оплата получена: ' + rub(r.paid) : r.error ? 'Saby: ' + r.error : 'Пока не оплачено' + (r.state ? ' (' + r.state + ')' : ''), !!r.error); if (r.status !== 'pending') reload(); } catch (e) { toast(e.message, true); } }));
