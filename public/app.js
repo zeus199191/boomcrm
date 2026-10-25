@@ -521,15 +521,14 @@ function productAddModal(o, p, suppliers, reload, est = false) {
     <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
     <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" value="${p.price}" step="any"></div></div>
     <label class="debtchk" ${est ? 'style="display:none"' : ''}><input type="checkbox" name="debt"><span><b>В долг</b> — весь товар берём у поставщика, на складе ничего не трогаем</span></label>
-    <div class="row" ${est ? 'style="display:none"' : ''}><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада —')}</select></div>
+    <div class="row" ${est ? 'style="display:none"' : ''}><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада / назначу позже —')}</select></div>
     <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${p.cost || ''}" step="any"></div></div>
     <div class="small" id="hint"></div>`,
   { submit: 'Добавить', onSubmit: async (d) => {
     const qty = +d.qty || 1;
     const miss = d.debt ? qty : Math.max(0, qty - Math.max(free, 0));
-    if (!est && d.debt && !d.contractor_id) { toast('Выберите поставщика — перед ним появится долг', true); return false; }
-    if (!est && !d.contractor_id && miss > 0 && !(await confirmBox(`Свободно на складе ${num(Math.max(free, 0))}${p.reserved ? ` (ещё ${num(p.reserved)} в резерве под другие заказы)` : ''}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
-    if (!est && d.contractor_id && miss > 0 && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг поставщику', true); return false; }
+    if (!est && !d.contractor_id && !d.debt && miss > 0 && !(await confirmBox(`Свободно на складе ${num(Math.max(free, 0))}${p.reserved ? ` (ещё ${num(p.reserved)} в резерве под другие заказы)` : ''}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
+    if (!est && (d.contractor_id || d.debt) && miss > 0 && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг поставщику', true); return false; }
     await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty, price: d.price, cost: d.cost, contractor_id: d.contractor_id || null, debt: !!d.debt });
     reload();
   } });
@@ -542,8 +541,9 @@ function productAddModal(o, p, suppliers, reload, est = false) {
     const miss = f.debt.checked ? qty : Math.max(0, qty - Math.max(free, 0));
     const sup = f.contractor_id.selectedOptions[0];
     $('#hint', f).innerHTML = !miss ? (f.contractor_id.value ? `<span class="muted">Товар есть на складе — долг не возникнет, поставщик будет указан в заказе.</span>` : '<span class="muted">Возьмём со склада (спишется при выдаче заказа).</span>')
-      : f.contractor_id.value ? `<span style="color:var(--warn)">${f.debt.checked ? 'В долг' : 'Не хватает'} ${num(miss)} — оприходуем от «${esc(sup.textContent)}», долг ${rub(miss * (+f.cost.value || 0))}.</span>`
-      : `<span style="color:var(--bad)">${f.debt.checked ? 'Выберите поставщика, у которого берём товар в долг.' : `Свободно на складе ${num(Math.max(free, 0))} — не хватает ${num(miss)}. Выберите поставщика, чтобы учесть долг.`}</span>`;
+      : f.contractor_id.value ? `<span style="color:var(--warn)">${f.debt.checked ? 'В долг' : 'Не хватает'} ${num(miss)} — при выдаче заказа оприходуем от «${esc(sup.textContent)}», долг ${rub(miss * (+f.cost.value || 0))}.</span>`
+      : f.debt.checked ? `<span style="color:var(--warn)">В долг ${num(miss)} — поставщика можно назначить позже (в заказе, до выдачи). Долг запишется при выдаче.</span>`
+      : `<span style="color:var(--bad)">Свободно на складе ${num(Math.max(free, 0))} — не хватает ${num(miss)}. Отметьте «В долг» или выберите поставщика.</span>`;
   };
   ['input', 'change'].forEach((ev) => f.addEventListener(ev, hint)); hint();
 }
@@ -651,9 +651,16 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const isEst = o.status === 'estimate';
   const t = o.totals;
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
+  const canSup = office && !['estimate', 'cancelled'].includes(o.status);
+  const supLine = (i) => {
+    const dq = Math.min(i.qty, i.debt_qty || i.qty);
+    const sup = i.contractor_name ? `🚚 ${esc(i.contractor_name)}` : (i.debt_mode ? '<span style="color:var(--warn)">⚠ поставщик не назначен</span>' : '');
+    const debt = i.debt_op_id ? ` · в долг ${num(i.supplied_qty || dq)} шт — <b>долг записан</b>` : i.debt_mode ? ` · в долг ${num(dq)} шт <span class="muted">(запишется при выдаче)</span>` : '';
+    const btn = canSup && i.ref_id ? `<button type="button" class="linkbtn" data-sup="${i.id}">${sup || debt ? 'изменить' : '＋ Поставщик / в долг'}</button>` : '';
+    return sup || debt || btn ? `<div class="small muted" style="margin-top:2px">${sup}${debt} ${btn}</div>` : '';
+  };
   const itemRows = (list, kind) => list.map((i) => `<tr data-item="${i.id}">
-    <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}${i.contractor_name ? `<div class="small muted">🚚 ${esc(i.contractor_name)}${i.supplied_qty ? ` · в долг ${num(i.supplied_qty)} шт` : ''}${office && i.debt_op_id && o.status !== 'issued' ? ` <button type="button" class="linkbtn" data-undebt="${i.id}">отменить долг</button>` : ''}</div>` : ''}
-      ${office && kind === 'product' && i.ref_id && !i.debt_op_id && !['issued', 'estimate', 'cancelled'].includes(o.status) ? `<div><button type="button" class="linkbtn" data-debt="${i.id}">＋ В долг у поставщика</button></div>` : ''}</td>
+    <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}${kind === 'product' ? supLine(i) : ''}</td>
     ${kind === 'service' ? `<td data-l="Мастер">${office ? `<select data-f="master_id">${masterOpts(i.master_id)}</select>` : esc(i.master_name || '—')}</td>` : ''}
     <td data-l="Кол-во" style="width:90px">${office ? `<input type="number" step="any" min="0" value="${i.qty}" data-f="qty">` : i.qty}</td>
     <td data-l="Цена" style="width:120px">${office ? `<input type="number" step="any" min="0" value="${i.price}" data-f="price">` : num(i.price)}</td>
@@ -769,18 +776,26 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       try { await PUT('/api/order-items/' + tr.dataset.item, { [inp.dataset.f]: inp.value }); reload(); } catch (e) { toast(e.message, true); }
     }));
   });
-  $$('[data-debt]', page).forEach((b) => (b.onclick = () => {
-    const i = o.items.find((x) => x.id === +b.dataset.debt);
+  $$('[data-sup]', page).forEach((b) => (b.onclick = () => {
+    const i = o.items.find((x) => x.id === +b.dataset.sup);
     const sup = contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner');
-    modal('В долг у поставщика', `<div style="margin-bottom:10px"><b>${esc(i.name)}</b><div class="small muted">Товар оприходуется от поставщика под этот заказ, перед ним появится долг. Склад для других заказов не уменьшится.</div></div>
-      <div class="field"><label>Поставщик</label><select name="contractor_id" required>${opts(sup.map((c) => [c.id, c.name]), i.contractor_id || '', '— выберите —')}</select></div>
-      <div class="row"><div class="field"><label>Количество в долг</label><input type="number" name="qty" value="${i.qty}" min="0.01" max="${i.qty}" step="any" required></div>
-      <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${i.cost || ''}" step="any" required></div></div>`,
-    { submit: 'Взять в долг', onSubmit: async (d) => { await POST(`/api/order-items/${i.id}/debt`, d); toast('Долг поставщику записан'); reload(); } });
-  }));
-  $$('[data-undebt]', page).forEach((b) => (b.onclick = async () => {
-    if (!(await confirmBox('Отменить долг поставщику по этой позиции? Товар будет считаться взятым со склада.', 'Отменить долг'))) return;
-    try { await DEL(`/api/order-items/${b.dataset.undebt}/debt`); toast('Долг отменён'); reload(); } catch (e) { toast(e.message, true); }
+    const booked = !!i.debt_op_id;
+    const m = modal('Поставщик товара', `<div style="margin-bottom:10px"><b>${esc(i.name)}</b> × ${num(i.qty)}
+      <div class="small muted">${booked ? 'Заказ выдан — долг поставщику уже записан. Можно сменить поставщика или закупочную цену; снимите галочку «В долг», чтобы отменить долг.' : 'Долг поставщику и приход товара запишутся, когда заказ получит статус «Выдан». До этого поставщика можно менять или назначить позже.'}</div></div>
+      <div class="field"><label>Поставщик</label><select name="contractor_id">${opts(sup.map((c) => [c.id, c.name]), i.contractor_id || '', '— будет назначен позже —')}</select></div>
+      <label class="debtchk"><input type="checkbox" name="debt" ${i.debt_mode || booked ? 'checked' : ''}><span><b>В долг у поставщика</b> — товар берём у поставщика, склад не трогаем</span></label>
+      <div class="row" id="dqr"><div class="field"><label>Количество в долг</label><input type="number" name="qty" value="${Math.min(i.qty, i.debt_qty || i.qty)}" min="0.01" max="${i.qty}" step="any" ${booked ? 'disabled' : ''}></div>
+      <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${i.cost || ''}" step="any"></div></div>
+      <div class="small" id="sh"></div>`,
+    { submit: 'Сохранить', onSubmit: async (d) => {
+      if (d.debt && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг', true); return false; }
+      if (booked && d.debt && !d.contractor_id) { toast('Долг уже записан — выберите поставщика', true); return false; }
+      if (booked && !d.debt && !(await confirmBox('Отменить долг поставщику? Товар будет считаться взятым со склада.', 'Отменить долг'))) return false;
+      try { await PUT(`/api/order-items/${i.id}/supplier`, d); toast('Сохранено'); reload(); } catch (e) { toast(e.message, true); return false; }
+    } });
+    const f = m.form; const upd = () => { $('#dqr', f).style.display = f.debt.checked ? '' : 'none';
+      $('#sh', f).innerHTML = f.debt.checked ? (f.contractor_id.value ? `<span class="muted">Долг ${rub((+f.qty.value || 0) * (+f.cost.value || 0))} перед «${esc(f.contractor_id.selectedOptions[0].textContent)}»${booked ? '' : ' — запишется при выдаче'}.</span>` : '<span style="color:var(--warn)">Поставщика нужно будет назначить до выдачи заказа — иначе статус «Выдан» не поставится.</span>') : '<span class="muted">Товар со склада, долга нет.</span>'; };
+    ['input', 'change'].forEach((ev) => f.addEventListener(ev, upd)); upd();
   }));
   $$('[data-del]', page).forEach((b) => (b.onclick = async () => {
     if (!(await confirmBox('Удалить позицию из заказа?', 'Удалить'))) return;
