@@ -2165,6 +2165,8 @@ async function mkReviews(box) {
 
 async function mkTools(box) {
   const site = location.origin + '/';
+  setTimeout(async () => { const f = $('#ymF', box); if (!f) return; try { f.ym_id.value = (await GET('/api/site/metrika')).ym_id; } catch { $('#ymCard', box).remove(); return; }
+    f.onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/site/metrika', { ym_id: f.ym_id.value }); toast(f.ym_id.value ? 'Метрика подключена к сайту' : 'Метрика отключена'); } catch (err) { toast(err.message, true); } }; }, 0);
   box.innerHTML = `<div class="grid g2">
     <div class="card"><h2>Ссылка с меткой для рекламы (UTM)</h2><div class="small muted" style="margin-bottom:8px">Ставьте такую ссылку на сайт в рекламе и постах. Заявка с сайта придёт с источником «Сайт · канал», и в аналитике будет видно, какая реклама работает.</div>
       <div class="row"><div class="field"><label>Канал (utm_source)</label><input id="us" list="mkch3" value="vk"><datalist id="mkch3">${['vk', 'telegram', 'avito', '2gis', 'yandex', 'instagram', 'max', 'qr', 'listovka'].map((c) => `<option value="${c}">`).join('')}</datalist></div>
@@ -2174,6 +2176,10 @@ async function mkTools(box) {
       <div id="qr" style="margin-top:8px"></div></div>
     ${S.me.social && (S.me.social.tg || S.me.social.vk || S.me.social.max) ? `<div class="card"><h2>Ссылки на соцсети для постов и визиток</h2><div class="small muted" style="margin-bottom:8px">Вставляйте в подписи постов, сообщения клиентам и печать (QR-код сделает любой генератор).</div>
       ${[['Telegram', S.me.social.tg], ['ВКонтакте', S.me.social.vk], ['MAX', S.me.social.max], ['Авито', S.me.social.avito], ['2ГИС (отзывы)', S.me.twogis_url]].filter((x) => x[1]).map(([n, u]) => `<div class="mk-tpl inline" style="justify-content:space-between;gap:8px"><span><b>${n}</b> <span class="small muted" style="word-break:break-all">${esc(u)}</span></span><button type="button" class="sm" data-scp="${esc(u)}">Копировать</button></div>`).join('')}</div>` : ''}
+    <div class="card" id="ymCard"><h2>Яндекс Метрика на сайте</h2><div class="small muted" style="margin-bottom:8px">Нужна для рекламы в Яндекс Директе: Директ будет видеть, кто оставил заявку или позвонил, и показывать рекламу похожим людям.
+      Создайте счётчик на <a href="https://metrika.yandex.ru" target="_blank" rel="noopener">metrika.yandex.ru</a> (адрес — ваш сайт), вставьте сюда его номер. Код на сайт CRM поставит сама.<br>
+      Затем в Метрике → «Цели» добавьте цели типа <b>«JavaScript-событие»</b> с идентификаторами: <b>lead</b> — заявка с сайта, <b>call</b> — нажали на телефон, <b>messenger</b> — перешли в Telegram/VK/MAX.</div>
+      <form id="ymF" class="inline"><input name="ym_id" placeholder="Номер счётчика, напр. 98765432" inputmode="numeric" style="max-width:260px"><button class="sm primary">Сохранить</button></form></div>
     <div class="card"><h2>Шаблоны сообщений</h2>${MK_TEMPLATES.map(([n, t], i) => `<div class="mk-tpl"><div class="inline" style="justify-content:space-between"><b>${esc(n)}</b><button type="button" class="sm" data-tcp="${i}">Копировать</button></div><div class="small muted">${esc(t)}</div></div>`).join('')}</div>
     <div class="card"><h2>Где ещё взять клиентов</h2><ul class="mk-list">
       <li><b>2ГИС и Яндекс Карты</b> — фото работ раз в неделю, ответы на все отзывы, актуальные часы работы.</li>
