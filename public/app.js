@@ -2216,8 +2216,11 @@ async function loadSabyCard(page) {
     <div id="sbPick"></div>
     ${a.saby_point_id ? `<div class="small" style="margin:6px 0">Точка продаж: <b>${esc(a.saby_point_name || a.saby_point_id)}</b> · прайс: <b>${esc(a.saby_price_list_name || a.saby_price_list_id || '—')}</b> · позиция для чека: <b>${esc(nom?.name || '—')}</b></div>` : ''}
     ${a.saby_point_id ? `<div class="field"><label>Как пробивать позиции</label><select name="saby_mode">${opts([['items', 'Построчно — каждая услуга и товар отдельной строкой (если оплачивают весь заказ)'], ['single', 'Одной строкой — «Оплата по заказ-наряду №…»']], a.saby_mode || 'items')}</select></div>` : ''}
-    ${a.error ? `<div class="small" style="color:var(--bad)">Ошибка: ${esc(a.error)}</div>` : ''}</form>`;
+    ${a.saby_point_id ? `<div class="field" style="max-width:320px"><label>ID прайс-листа Saby (если не подтянулся сам)</label><input name="saby_price_list_id" value="${esc(a.saby_price_list_id)}" inputmode="numeric" placeholder="например 12"></div>` : ''}
+    ${a.error ? `<div class="small" style="color:var(--bad)">Ошибка: ${esc(a.error)}</div>` : ''}
+    ${a.diag ? `<details style="margin-top:10px"><summary class="small muted" style="cursor:pointer">Диагностика (для разбора ошибок)</summary><pre class="small" style="white-space:pre-wrap;word-break:break-all;max-height:260px;overflow:auto;background:var(--bg2,rgba(0,0,0,.2));padding:8px;border-radius:8px">${esc(a.diag)}</pre><button type="button" class="sm" id="sbDiag">Скопировать</button></details>` : ''}</form>`;
   const f = $('#sabyF', box);
+  const dg = $('#sbDiag', box); if (dg) dg.onclick = () => copyText(a.diag, 'Скопировано — пришлите это в чат');
   f.onsubmit = async (e) => { e.preventDefault(); try { await PUT('/api/saby', formData(f)); toast('Сохранено'); loadSabyCard(page); } catch (err) { toast(err.message, true); } };
   const off = $('#sbOff', box); if (off) off.onclick = async () => { if (await confirmBox('Отключить кассу Saby? Оплаты, уже записанные в CRM, останутся.', 'Отключить')) { await PUT('/api/saby', { disconnect: 1 }); loadSabyCard(page); } };
   const tb = $('#sbTest', box); if (tb) tb.onclick = async () => {
