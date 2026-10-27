@@ -124,6 +124,7 @@ server.listen(PORT, HOST, () => {
   require('./lib/saby').start();
   require('./lib/sms').start();
   require('./lib/brands').start();
+  require('./lib/marketing').start();
 });
 
 const shutdown = () => { server.close(); process.exit(0); };

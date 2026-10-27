@@ -1213,6 +1213,21 @@ route(/^\/stock$/, async (page) => {
 });
 
 // ================= Услуги =================
+// Чаты MAX: сотрудников (события CRM) и для публикаций (только контент-план)
+async function loadMaxChats(page) {
+  const box = $('#maxChats', page); if (!box) return;
+  let d; try { d = await GET('/api/max/chats'); } catch (e) { box.textContent = e.message; return; }
+  const optsC = (sel) => `<option value="">— не выбран —</option>${d.chats.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${c.channel ? '📢 ' : '💬 '}${esc(c.title || 'Чат ' + c.id)}</option>`).join('')}`;
+  box.innerHTML = `<div class="row"><div class="field"><label>Общий чат сотрудников (события CRM, заказы)</label><select id="mxG">${optsC(d.group)}</select></div>
+    <div class="field"><label>Чат для публикаций (только посты из контент-плана)</label><select id="mxC">${optsC(d.content)}</select></div></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text);cursor:pointer"><input type="checkbox" id="mxA" ${d.autopost ? 'checked' : ''} style="width:16px;height:16px;flex:none;margin-top:2px"> <span>Публиковать автоматически: посты с каналом «MAX» и статусом «Готово» уходят в дату и время из контент-плана</span></label>
+    <div class="inline" style="margin-top:8px"><button type="button" class="sm" id="mxSave">Сохранить чаты</button><button type="button" class="sm ghost" id="mxReload">Обновить список</button></div>
+    ${d.chats.length ? '' : '<div style="margin-top:6px">Бот пока не видит ни одного чата. Добавьте его в чат или канал MAX администратором и нажмите «Обновить список».</div>'}
+    ${d.error ? `<div style="color:var(--warn);margin-top:6px">Список из MAX не загрузился (${esc(d.error)}), показаны чаты, о которых бот узнал сам.</div>` : ''}`;
+  $('#mxReload', box).onclick = () => loadMaxChats(page);
+  $('#mxSave', box).onclick = async () => { try { await PUT('/api/max/chats', { group: $('#mxG', box).value, content: $('#mxC', box).value, autopost: $('#mxA', box).checked }); S.me.max_content = !!$('#mxC', box).value; toast('Чаты сохранены'); } catch (e) { toast(e.message, true); } };
+}
+
 // ================= Комплексы (готовые пакеты работ и товаров) =================
 const svcTabs = (cur) => `<div class="chips" style="margin:0 0 0 12px">${[['svc', 'Прайс', '/services'], ['pkg', '📦 Комплексы', '/packages']].map(([k, t, h]) => `<a class="chip ${k === cur ? 'on' : ''}" href="#${h}" style="text-decoration:none">${t}</a>`).join('')}</div>`;
 const pkgItemsHtml = (p) => p.items.map((i) => `<div class="small" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;${i.missing ? 'opacity:.5;text-decoration:line-through' : ''}"><span>${i.kind === 'product' ? '📦' : '🔧'} ${esc(i.name || '—')}${i.qty !== 1 ? ' × ' + i.qty : ''}</span><span class="mono muted nowrap">${rub(i.eff_price * i.qty)}</span></div>`).join('');
@@ -2054,6 +2069,7 @@ async function mkPlan(box, query) {
   const postModal = (p = {}) => modal(p.id ? 'Публикация' : 'Новая публикация', `
     <div class="field"><label>Тема *</label><input name="title" required value="${esc(p.title || '')}"></div>
     <div class="row"><div class="field"><label>Дата</label><input type="date" name="date" value="${esc(p.date || '')}"></div>
+      <div class="field" style="max-width:130px"><label>Время</label><input type="time" name="time" value="${esc(p.time || '')}" placeholder="10:00"></div>
       <div class="field"><label>Канал</label><input name="channel" list="mkch" value="${esc(p.channel || '')}"><datalist id="mkch">${MK_CHANNELS.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
       <div class="field"><label>Формат</label><input name="format" list="mkfm" value="${esc(p.format || '')}"><datalist id="mkfm">${MK_FORMATS.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div></div>
     <div class="row"><div class="field"><label>Статус</label><select name="status">${opts(Object.entries(MK_ST).map(([k, v]) => [k, v[0]]), p.status || (p.date ? 'plan' : 'idea'))}</select></div>
@@ -2061,9 +2077,19 @@ async function mkPlan(box, query) {
     <div class="field"><label>Текст / сценарий</label><textarea name="text" rows="6" placeholder="Текст поста, сценарий видео, хэштеги">${esc(p.text || '')}</textarea></div>
     <div class="row"><div class="field"><label>Ссылка на публикацию</label><input name="url" value="${esc(p.url || '')}" placeholder="https://"></div>
       <div class="field"><label>Охват / просмотры</label><input type="number" name="reach" value="${p.reach ?? ''}"></div><div class="field"><label>Заявок с поста</label><input type="number" name="leads" value="${p.leads ?? ''}"></div></div>
-    ${p.order_id ? `<div class="small">Работа: <a href="#/orders/${p.order_id}">заказ-наряд №${p.order_id}</a></div><input type="hidden" name="order_id" value="${p.order_id}">` : ''}`,
+    ${p.order_id ? `<div class="small">Работа: <a href="#/orders/${p.order_id}">заказ-наряд №${p.order_id}</a></div><input type="hidden" name="order_id" value="${p.order_id}">` : ''}
+    <div class="field" style="margin-top:8px"><label>Картинка к посту</label><div class="inline" style="gap:10px;align-items:center">${p.image ? `<img src="/api/mk/posts/${p.id}/image?v=${esc(p.image)}" alt="" style="height:70px;border-radius:8px">` : ''}
+      ${p.id ? `<label class="btn sm" style="cursor:pointer">📷 ${p.image ? 'Заменить' : 'Загрузить'}<input type="file" accept="image/*" hidden id="mkImg"></label>${p.image ? '<button type="button" class="sm ghost danger" id="mkImgDel">Убрать</button>' : ''}` : '<span class="small muted">Сохраните публикацию, затем добавьте картинку</span>'}</div></div>
+    <div class="mk-maxbox small" style="margin-top:8px;padding:10px;border-radius:10px;background:rgba(59,158,255,.08)">
+      <b>MAX:</b> ${p.max_posted_at ? `✅ опубликовано ${dt(p.max_posted_at)}` : S.me.max_content ? 'посты с каналом «MAX» и статусом «Готово» публикуются в чат для публикаций автоматически в указанные дату и время (без времени — в 10:00)' : 'чат для публикаций не выбран — Настройки → MAX'}
+      ${p.max_error ? `<div style="color:var(--bad)">Ошибка публикации: ${esc(p.max_error)}</div>` : ''}
+      ${p.id && S.me.max_content ? `<div style="margin-top:6px"><button type="button" class="sm" id="mkMaxNow">📤 Опубликовать в MAX сейчас</button></div>` : ''}</div>`,
   { wide: true, footer: `${p.id ? '<button type="button" class="ghost danger" data-delp style="margin-right:auto">Удалить</button>' : ''}<button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>`,
-    onOpen: (f, close) => { const dl = $('[data-delp]', f); if (dl) dl.onclick = async () => { if (await confirmBox('Удалить публикацию из плана?', 'Удалить')) { await DEL('/api/mk/posts/' + p.id); close(); mkPlan(box, query); } }; },
+    onOpen: (f, close) => {
+      const im = $('#mkImg', f); if (im) im.onchange = async () => { const file = im.files[0]; if (!file) return; try { await POST(`/api/mk/posts/${p.id}/image`, { data: await shrinkImage(file) }); toast('Картинка загружена'); close(); postModal({ ...p, image: 'new' + Date.now() }); } catch (e) { toast(e.message, true); } };
+      const imd = $('#mkImgDel', f); if (imd) imd.onclick = async () => { await DEL(`/api/mk/posts/${p.id}/image`); close(); postModal({ ...p, image: null }); };
+      const mn = $('#mkMaxNow', f); if (mn) mn.onclick = async () => { if (!(await confirmBox('Опубликовать этот пост в чат MAX прямо сейчас?', 'Опубликовать'))) return; try { await PUT('/api/mk/posts/' + p.id, formData(f)); await POST(`/api/mk/posts/${p.id}/max`); toast('Опубликовано в MAX'); close(); mkPlan(box, query); } catch (e) { toast(e.message, true); } };
+      const dl = $('[data-delp]', f); if (dl) dl.onclick = async () => { if (await confirmBox('Удалить публикацию из плана?', 'Удалить')) { await DEL('/api/mk/posts/' + p.id); close(); mkPlan(box, query); } }; },
     onSubmit: async (v) => { if (p.id) await PUT('/api/mk/posts/' + p.id, v); else await POST('/api/mk/posts', v); toast('Сохранено'); mkPlan(box, query); } });
   const all = [...d.posts, ...d.ideas];
   $('#pm', box).onclick = () => go('/marketing' + qs({ tab: 'plan', m: shift(-1) }));
@@ -2530,16 +2556,6 @@ async function loadUpdateCard(page) {
     try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
     setTimeout(() => pollUpdate(page), 3000);
     loadUpdateCard(page);
-  $$('#doff input', page).forEach((cb) => cb.addEventListener('change', () => {
-    cb.parentElement.classList.toggle('on', cb.checked);
-    $('input[name=days_off]', page).value = $$('#doff input:checked', page).map((x) => x.value).join(',');
-  }));
-  if (s.max_token) GET('/api/max/status').then((st) => {
-    $('#maxStatus', page).innerHTML = st.ok && st.bot ? `<span style="color:var(--ok)">✓ Подключён бот <b>${esc(st.bot.name || '')}</b>${st.bot.username ? ' (@' + esc(st.bot.username) + ')' : ''}</span>${st.group ? ' · общий чат подключён' : ' · общий чат не подключён'}`
-      : `<span style="color:var(--bad)">Нет связи с MAX: ${esc(st.error || 'неизвестная ошибка')}</span>`;
-  }).catch(() => {});
-  $('#maxTest', page).onclick = async () => { try { await POST('/api/max/test'); toast('Сообщение отправлено в MAX'); } catch (e) { toast(e.message, true); } };
-  $('#digNow', page).onclick = async () => { await POST('/api/max/digest-now'); toast('Сводка отправлена'); };
   };
   $('#updBtn', box).onclick = async () => { if (await confirmBox('Обновить CRM до последней версии? Займёт 1–3 минуты, данные сохранятся.', 'Обновить')) start({}, 'Обновление запущено'); };
   $('#domBtn', box).onclick = async () => {
@@ -2580,13 +2596,15 @@ route(/^\/settings$/, async (page, query = {}) => {
         <li>На платформе MAX для партнёров (business.max.ru) создайте чат-бота «${esc(s.company_name)}» и дождитесь модерации.</li>
         <li>Скопируйте токен бота (Чат-боты → ⋮ → Настройки) и вставьте ниже, затем «Сохранить настройки».</li>
         <li>Каждый сотрудник подключается сам: кнопка «Подключить мой MAX» внизу меню, или администратор — в карточке сотрудника.</li>
-        <li>Для общего чата: добавьте бота в групповой чат MAX и сделайте администратором — события начнут дублироваться туда.</li></ol>
+        <li>Для общего чата: добавьте бота в групповой чат MAX и сделайте администратором — события начнут дублироваться туда.</li>
+        <li>Для публикаций: добавьте бота администратором в клиентский чат или канал MAX и выберите его ниже как «Чат для публикаций» — туда уйдут только посты из контент-плана.</li></ol>
       <div class="field"><label>Токен бота MAX</label><input name="max_token" value="${esc(s.max_token)}" placeholder="вставьте токен" autocomplete="off"></div>
       <div id="maxStatus" class="small muted" style="margin-bottom:10px">${s.max_token ? 'Проверяю подключение…' : 'Бот не подключён'}</div>
       <div class="row"><div class="field"><label>Время вечерней сводки</label><input type="time" name="digest_time" value="${esc(s.digest_time || '19:00')}"></div>
       <div class="field"><label>Общий чат сотрудников</label><select name="max_group_on"><option value="1" ${s.max_group_on !== '0' ? 'selected' : ''}>Дублировать события</option><option value="0" ${s.max_group_on === '0' ? 'selected' : ''}>Не дублировать</option></select></div></div>
+      <div id="maxChats" class="small muted" style="margin:6px 0 10px"></div>
       <div class="inline"><button type="button" class="sm" id="maxTest">Отправить мне тест</button><button type="button" class="sm" id="digNow">Прислать сводку сейчас</button></div>
-      <div class="small muted" style="margin-top:8px">Руководству: заявки, записи, «готово», выдача с оплатой и долгом, остатки, итоги дня, сообщения мастеров. Мастерам: назначенные заказы с кнопками «В работе / Ждёт запчасти / Готово», переносы, записи на завтра. Кто что получает — в карточке сотрудника.</div></div>
+      <div class="small muted" style="margin-top:8px">Руководству: заявки, записи, «готово», выдача с оплатой и долгом, остатки, итоги дня, сообщения мастеров. Мастерам: назначенные заказы, переносы, записи на завтра (без кнопок смены статуса). В чат для публикаций — только посты из контент-плана. Кто что получает — в карточке сотрудника.</div></div>
     <div class="card"><h2>Telegram-бот</h2>
       <ol class="small muted" style="padding-left:18px;margin-top:0"><li>Создайте бота у @BotFather, скопируйте токен.</li><li>Создайте группу сотрудников, добавьте туда бота и напишите в группе <code>/id</code> — бот ответит ID чата.</li><li>Клиенты и мастера пишут боту /start и делятся номером — привязка по телефону.</li></ol>
       <div class="field"><label>Токен бота</label><input name="tg_token" value="${esc(s.tg_token)}" placeholder="123456:ABC…"></div>
@@ -2649,6 +2667,17 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   loadSmsCard(page);
   loadBrandsCard(page);
   loadReviewsCard(page);
+  $$('#doff input', page).forEach((cb) => cb.addEventListener('change', () => {
+    cb.parentElement.classList.toggle('on', cb.checked);
+    $('input[name=days_off]', page).value = $$('#doff input:checked', page).map((x) => x.value).join(',');
+  }));
+  if (s.max_token) GET('/api/max/status').then((st) => {
+    $('#maxStatus', page).innerHTML = st.ok && st.bot ? `<span style="color:var(--ok)">✓ Подключён бот <b>${esc(st.bot.name || '')}</b>${st.bot.username ? ' (@' + esc(st.bot.username) + ')' : ''}</span>${st.group ? ' · общий чат подключён' : ' · общий чат не подключён'}`
+      : `<span style="color:var(--bad)">Нет связи с MAX: ${esc(st.error || 'неизвестная ошибка')}</span>`;
+  }).catch(() => {});
+  if (s.max_token) loadMaxChats(page);
+  $('#maxTest', page).onclick = async () => { try { await POST('/api/max/test'); toast('Сообщение отправлено в MAX'); } catch (e) { toast(e.message, true); } };
+  $('#digNow', page).onclick = async () => { await POST('/api/max/digest-now'); toast('Сводка отправлена'); };
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
     const d = formData(e.target); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';
