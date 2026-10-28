@@ -214,7 +214,8 @@ const NAV = [
   ['/contractors', 'Контрагенты', 'partners', 'office'],
   ['/warranty', 'Гарантия', 'shield', 'office'],
   ['/finance', 'Финансы', 'money', 'office'],
-  ['/marketing', 'Маркетинг', 'mega', 'admin'],
+  ['/marketing', 'Маркетинг', 'mega', 'mk'],
+  ['/smm', 'SMM', 'mega', 'smm'],
   ['/salary', 'Зарплата', 'salary', 'all'],
   ['/users', 'Сотрудники', 'users', 'admin'],
   ['/settings', 'Настройки', 'settings', 'admin'],
@@ -222,7 +223,7 @@ const NAV = [
 
 function renderShell() {
   const u = S.me.user;
-  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice()) || (n[3] === 'admin' && isAdmin()));
+  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice()) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
@@ -1998,8 +1999,14 @@ const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '
 const maxLink = (text) => 'https://max.ru/:share?text=' + encodeURIComponent(text);
 const copyText = async (t, msg = 'Скопировано') => { try { await navigator.clipboard.writeText(t); toast(msg); } catch { prompt('Скопируйте текст:', t); } };
 
+route(/^\/smm$/, async (page, query) => {
+  if (!S.me.perms?.smm) return go('/');
+  if (S.me.perms?.marketing) return go('/marketing' + qs({ ...query, tab: 'pubs' }));
+  page.innerHTML = `<div class="topbar"><h1>SMM</h1><div class="sp"></div></div><div id="mk"><div class="muted">Загрузка…</div></div>`;
+  await mkPubs($('#mk', page), query);
+});
 route(/^\/marketing$/, async (page, query) => {
-  if (!isAdmin()) return go('/');
+  if (!S.me.perms?.marketing) return go(S.me.perms?.smm ? '/smm' : '/');
   const tab = query.tab || 'analytics';
   page.innerHTML = `<div class="topbar"><h1>Маркетинг</h1><div class="sp"></div></div>${mkTabs(tab)}<div id="mk"><div class="muted">Загрузка…</div></div>`;
   const box = $('#mk', page);
@@ -2017,6 +2024,7 @@ function uploadRaw(url, blob, onProgress) {
     x.onerror = () => no(new Error('Связь прервалась')); x.send(blob);
   });
 }
+const pubBase = (q = {}) => (location.hash.startsWith('#/smm') ? '/smm' + qs(q) : '/marketing' + qs({ tab: 'pubs', ...q }));
 async function mkPubs(box, query) {
   const [orders, st, list] = await Promise.all([GET('/api/pubs/orders'), GET('/api/pubs/settings'), GET('/api/pubs')]);
   const draft = query.pub ? list.find((p) => p.id === +query.pub) : null;
@@ -2038,14 +2046,14 @@ async function mkPubs(box, query) {
       <div class="inline"><button class="primary" id="pbGo">🚀 Опубликовать</button>${cur.id ? '<button type="button" class="ghost danger" id="pbDel">Удалить черновик</button>' : ''}</div>
       <div id="pbRes" style="margin-top:10px"></div></div>
     <div>
-      <div class="card"><h2>Подключения</h2>
+      ${!S.me.perms?.marketing ? '' : `<div class="card"><h2>Подключения</h2>
         <div class="small muted" style="margin-bottom:8px"><b>MAX</b> — чат или канал для публикаций выбирается в Настройках → MAX (бот должен быть администратором).<br>
         <b>Telegram</b> — добавьте бота студии (из Настроек → Telegram) <b>администратором канала</b> с правом публикации и укажите канал: <code>@имя_канала</code> или его ID.<br>
         <b>ВКонтакте</b> — нужен ключ доступа администратора группы с правами <i>wall, photos, video</i> и ID группы. Ключ сообщества из настроек группы фото на стену не загружает — понадобится ключ пользователя (VK ID).</div>
         <div class="row"><div class="field"><label>Telegram-канал</label><input id="pbTg" value="${esc(st.tg_post_chat)}" placeholder="@bscaraudio38"></div></div>
         <div class="row"><div class="field"><label>ID группы ВКонтакте</label><input id="pbVg" value="${esc(st.vk_group_id)}" placeholder="bscaraudio38 или 123456"></div>
           <div class="field"><label>Ключ доступа ВКонтакте ${st.vk_token ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="pbVt" type="password" autocomplete="new-password" placeholder="${st.vk_token ? '•••••• (не менять)' : 'vk1.a.…'}"></div></div>
-        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>
+        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>`}
       <div class="card"><h2>Публикации</h2>${list.length ? list.map((p) => `<div class="li" style="align-items:flex-start;gap:10px">
         ${p.media[0] ? (p.media[0].kind === 'video' ? `<video src="/api/pubs/${p.id}/media/${p.media[0].id}#t=0.5" muted preload="metadata" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"></video>` : `<img src="/api/pubs/${p.id}/media/${p.media[0].id}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none" alt="">`) : '<div style="width:64px;height:64px;border-radius:8px;background:var(--line);flex:none"></div>'}
         <div class="grow"><div class="t">${esc(p.title || (p.text || '').slice(0, 60) || 'Без текста')}</div>
@@ -2109,15 +2117,15 @@ async function mkPubs(box, query) {
       const ok = Object.values(r.results).every((x) => x.ok);
       $('#pbRes', box).innerHTML = Object.entries(r.results).map(([k, v]) => `<div class="small">${v.ok ? '✅' : '❌'} <b>${PUB_CH.find((x) => x[0] === k)[1]}</b> ${v.ok ? (v.url ? `<a href="${esc(v.url)}" target="_blank" rel="noopener">открыть</a>` : 'готово') : esc(v.error || '')}</div>`).join('');
       toast(ok ? 'Опубликовано везде' : 'Опубликовано не везде — см. ошибки', !ok);
-      if (ok) setTimeout(() => go('/marketing' + qs({ tab: 'pubs' })), 1500);
+      if (ok) setTimeout(() => go(pubBase()), 1500);
     } catch (e) { toast(e.message, true); }
     btn.disabled = false; btn.textContent = '🚀 Опубликовать';
   };
-  const dd = $('#pbDel', box); if (dd) dd.onclick = async () => { if (await confirmBox('Удалить черновик?', 'Удалить')) { await DEL('/api/pubs/' + cur.id); go('/marketing' + qs({ tab: 'pubs' })); } };
-  $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
-  $('#pbTtg', box).onclick = async () => { try { const r = await POST('/api/pubs/test/tg'); toast('Telegram: канал «' + (r.name || '') + '» доступен'); } catch (e) { toast(e.message, true); } };
-  $('#pbTvk', box).onclick = async () => { try { const r = await POST('/api/pubs/test/vk'); toast('ВКонтакте: группа «' + (r.name || '') + '» доступна'); } catch (e) { toast(e.message, true); } };
-  $$('[data-pbopen]', box).forEach((b) => (b.onclick = () => go('/marketing' + qs({ tab: 'pubs', pub: b.dataset.pbopen }))));
+  const dd = $('#pbDel', box); if (dd) dd.onclick = async () => { if (await confirmBox('Удалить черновик?', 'Удалить')) { await DEL('/api/pubs/' + cur.id); go(pubBase()); } };
+  if ($('#pbSave', box)) $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
+  if ($('#pbTtg', box)) $('#pbTtg', box).onclick = async () => { try { const r = await POST('/api/pubs/test/tg'); toast('Telegram: канал «' + (r.name || '') + '» доступен'); } catch (e) { toast(e.message, true); } };
+  if ($('#pbTvk', box)) $('#pbTvk', box).onclick = async () => { try { const r = await POST('/api/pubs/test/vk'); toast('ВКонтакте: группа «' + (r.name || '') + '» доступна'); } catch (e) { toast(e.message, true); } };
+  $$('[data-pbopen]', box).forEach((b) => (b.onclick = () => go(pubBase({ pub: b.dataset.pbopen }))));
   $$('[data-pbsite]', box).forEach((c) => (c.onchange = async () => { await PUT('/api/pubs/' + c.dataset.pbsite, { site_visible: c.checked }); toast(c.checked ? 'Показывается на сайте' : 'Убрано с сайта'); }));
   $$('[data-pbdel]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить публикацию? С сайта она пропадёт; в MAX, Telegram и ВКонтакте пост останется — его удаляют там.', 'Удалить')) { await DEL('/api/pubs/' + b.dataset.pbdel); mkPubs(box, query); } }));
 }
@@ -2483,6 +2491,9 @@ const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => mod
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
     <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
     ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>
+    <h3 style="margin-top:14px">Доступ к разделам</h3>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_marketing" ${u.perm_marketing === 1 || ((u.perm_marketing === null || u.perm_marketing === undefined) && (u.role === 'admin' || u.role === 'senior')) ? 'checked' : ''}> Маркетинг — все инструменты (аналитика, контент-план, бюджет, база, отзывы, SMS, публикации)</label>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_smm" ${u.perm_smm === 1 ? 'checked' : ''}> SMM — только публикации в MAX, Telegram, ВКонтакте и на сайт</label>
     <h3 style="margin-top:14px">MAX и уведомления</h3>
     <div class="inline" style="margin-bottom:8px">${u.max_linked ? '<span class="badge ok">MAX подключён</span>' : '<span class="badge">MAX не подключён</span>'}
       <button type="button" class="sm" data-mxl>${u.max_linked ? 'Переподключить' : '📲 Подключить MAX'}</button>${u.max_linked ? '<button type="button" class="sm ghost danger" data-mxu>Отключить</button>' : ''}</div>
