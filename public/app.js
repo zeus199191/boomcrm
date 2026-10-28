@@ -2074,7 +2074,7 @@ async function mkPubs(box, query) {
   };
   const refreshMedia = async () => { if (!cur.id) return drawMedia(); const p = (await GET('/api/pubs')).find((x) => x.id === cur.id); cur.media = p ? p.media : []; drawMedia(); };
   drawMedia();
-  const loadSug = async () => {
+  const loadSug = async (replace = false) => {
     const sb = $('#pbSug', box); cur.order_id = $('#pbO', box).value; sb.innerHTML = '';
     if (!cur.order_id) return;
     let s; try { s = await GET('/api/pubs/suggest' + qs({ order_id: cur.order_id })); } catch (e) { sb.textContent = e.message; return; }
@@ -2082,13 +2082,13 @@ async function mkPubs(box, query) {
       <div class="small muted" style="margin-top:4px">Работы: ${esc(s.works.join(', ') || '—')}${s.goods.length ? ' · товары: ' + esc(s.goods.join(', ')) : ''}</div></div>
       ${s.photos.length ? `<div class="field"><label>Фото из заказа — нажмите, чтобы добавить в пост</label><div class="photos">${s.photos.map((ph) => `<button type="button" class="ph" data-oph="${ph.id}"><img loading="lazy" src="/api/photos/${ph.id}" alt=""></button>`).join('')}</div>
         <button type="button" class="sm" id="pbAllPh" style="margin-top:6px">Добавить все фото заказа</button></div>` : '<div class="small muted" style="margin-bottom:8px">В заказе нет фото — загрузите свои ниже.</div>'}`;
-    $$('[data-var]', sb).forEach((b) => (b.onclick = async () => { if (X.value.trim() && !(await confirmBox('Заменить текущий текст поста?', 'Заменить'))) return; X.value = s.variants[+b.dataset.var]; if (!T.value) T.value = s.title; cnt(); }));
+    $$('[data-var]', sb).forEach((b) => (b.onclick = () => { X.value = s.variants[+b.dataset.var]; T.value = s.title; cnt(); }));
     const addPh = async (ids) => { try { await ensure(); const r = await POST(`/api/pubs/${cur.id}/media/from-order`, { photo_ids: ids }); toast(r.added ? `Добавлено фото: ${r.added}` : 'Эти фото уже в посте'); await refreshMedia(); } catch (e) { toast(e.message, true); } };
     $$('[data-oph]', sb).forEach((b) => (b.onclick = () => addPh([+b.dataset.oph])));
     const ap = $('#pbAllPh', sb); if (ap) ap.onclick = () => addPh(s.photos.map((x) => x.id));
-    if (!X.value.trim()) { X.value = s.variants[0]; T.value = T.value || s.title; cnt(); }
+    if (replace || !X.value.trim()) { X.value = s.variants[0]; T.value = s.title; cnt(); } // выбрали другой заказ — текст и заголовок под него
   };
-  $('#pbO', box).onchange = loadSug; if (cur.order_id) loadSug();
+  $('#pbO', box).onchange = () => { if (!$('#pbO', box).value) { X.value = ''; T.value = ''; cnt(); } loadSug(true); }; if (cur.order_id) loadSug(!draft);
   $('#pbF', box).onchange = async (e) => {
     const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
     try { await ensure(); } catch (err) { return toast(err.message, true); }
