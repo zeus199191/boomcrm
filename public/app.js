@@ -1988,7 +1988,7 @@ const MK_TEMPLATES = [
   ['С днём рождения', 'С днём рождения, {имя}! Команда Бумсистем дарит вам скидку на любые работы в течение месяца. Ждём в гости!'],
   ['Сезонное ТО сигнализации', 'Здравствуйте, {имя}! Весна — время проверить сигнализацию после зимы: метку, датчики, батарейки брелока. Займёт 20 минут. Запись: {телефон}'],
 ];
-const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['sms', '📨 SMS'], ['tools', '🧰 Инструменты']]
+const mkTabs = (cur) => `<div class="chips mk-tabs">${[['analytics', '📊 Аналитика'], ['plan', '🗓 Контент-план'], ['pubs', '📣 Публикации'], ['budget', '💸 Реклама и бюджет'], ['base', '👥 База для рассылок'], ['reviews', '⭐ Отзывы'], ['sms', '📨 SMS'], ['tools', '🧰 Инструменты']]
   .map(([k, t]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#/marketing?tab=${k}">${t}</a>`).join('')}</div>`;
 const pctTxt = (v) => (v === null || v === undefined ? '—' : v + '%');
 const fillTpl = (t, c) => t.replace(/\{имя\}/g, /^клиент/i.test(c.name || '') ? 'добрый день' : (c.name || '').split(' ')[0] || 'добрый день').replace(/\{авто\}/g, c.car || 'автомобиль')
@@ -2003,9 +2003,124 @@ route(/^\/marketing$/, async (page, query) => {
   const tab = query.tab || 'analytics';
   page.innerHTML = `<div class="topbar"><h1>Маркетинг</h1><div class="sp"></div></div>${mkTabs(tab)}<div id="mk"><div class="muted">Загрузка…</div></div>`;
   const box = $('#mk', page);
-  const T = { analytics: mkAnalytics, plan: mkPlan, budget: mkBudget, base: mkBase, reviews: mkReviews, sms: mkSms, tools: mkTools }[tab] || mkAnalytics;
+  const T = { analytics: mkAnalytics, plan: mkPlan, pubs: mkPubs, budget: mkBudget, base: mkBase, reviews: mkReviews, sms: mkSms, tools: mkTools }[tab] || mkAnalytics;
   await T(box, query, page);
 });
+
+// ================= Публикации: один пост → MAX, Telegram, ВКонтакте, сайт =================
+const PUB_CH = [['max', 'MAX'], ['tg', 'Telegram'], ['vk', 'ВКонтакте'], ['site', 'Сайт «Наши работы»']];
+function uploadRaw(url, blob, onProgress) {
+  return new Promise((ok, no) => {
+    const x = new XMLHttpRequest(); x.open('POST', url); x.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
+    x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded * 100 / e.total)); };
+    x.onload = () => { let d = null; try { d = JSON.parse(x.responseText); } catch {} x.status < 300 ? ok(d) : no(new Error((d && d.error) || 'Ошибка ' + x.status)); };
+    x.onerror = () => no(new Error('Связь прервалась')); x.send(blob);
+  });
+}
+async function mkPubs(box, query) {
+  const [orders, st, list] = await Promise.all([GET('/api/pubs/orders'), GET('/api/pubs/settings'), GET('/api/pubs')]);
+  const draft = query.pub ? list.find((p) => p.id === +query.pub) : null;
+  let cur = draft ? { id: draft.id, order_id: draft.order_id || '', media: draft.media } : { id: null, order_id: query.order || '', media: [] };
+  const chOn = { max: st.max_content && st.max_bot, tg: !!st.tg_post_chat && st.tg_bot, vk: !!st.vk_group_id && st.vk_token, site: true };
+  const chNote = { max: !st.max_bot ? 'бот MAX не подключён' : st.max_content ? 'чат для публикаций выбран' : 'выберите чат для публикаций в Настройках → MAX',
+    tg: !st.tg_bot ? 'нет Telegram-бота (Настройки → Telegram)' : st.tg_post_chat ? st.tg_post_chat : 'укажите канал в «Подключениях»', vk: chOn.vk ? 'группа ' + st.vk_group_id : 'укажите ключ и группу в «Подключениях»', site: 'раздел на главной странице сайта' };
+  const resBadges = (p) => PUB_CH.filter(([k]) => p.results[k]).map(([k, n]) => { const r = p.results[k];
+    return r.ok ? (r.url ? `<a class="badge ok" href="${esc(r.url)}" target="_blank" rel="noopener">✓ ${n.split(' ')[0]}</a>` : `<span class="badge ok">✓ ${n.split(' ')[0]}</span>`) : `<span class="badge red" title="${esc(r.error || '')}">✕ ${n.split(' ')[0]}</span>`; }).join(' ');
+  box.innerHTML = `<div class="grid g2" style="align-items:start">
+    <div class="card"><h2>${draft ? 'Публикация (черновик)' : 'Новая публикация'}</h2>
+      <div class="field"><label>Работа из заказ-наряда (подскажет текст и фото)</label><select id="pbO"><option value="">— без заказа —</option>${orders.map((o) => `<option value="${o.id}" ${String(o.id) === String(cur.order_id) ? 'selected' : ''}>${orderNo(o.id)} · ${esc([o.brand, o.model, o.year].filter(Boolean).join(' ') || 'авто')} · ${dmy(o.date)}${o.photos ? ' · фото ' + o.photos : ''}${o.used ? ' · ✓ уже публиковали' : ''}</option>`).join('')}</select></div>
+      <div id="pbSug"></div>
+      <div class="field"><label>Заголовок (для сайта)</label><input id="pbT" value="${esc(draft?.title || '')}" placeholder="Toyota Camry — сигнализация с автозапуском"></div>
+      <div class="field"><label>Текст поста</label><textarea id="pbX" rows="10" placeholder="Выберите работу выше — CRM предложит текст по заказ-наряду">${esc(draft?.text || '')}</textarea><div class="small muted" id="pbCnt"></div></div>
+      <div class="field"><label>Фото и видео * <span class="muted small">(без них пост не публикуется; первое — обложка)</span></label><div class="photos" id="pbM"></div>
+        <label class="btn sm" style="cursor:pointer;margin-top:6px">📷 Добавить фото / видео<input type="file" accept="image/*,video/*" multiple hidden id="pbF"></label> <span class="small muted" id="pbUp"></span></div>
+      <div class="field"><label>Куда публиковать</label>${PUB_CH.map(([k, n]) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;color:var(--text);${chOn[k] ? '' : 'opacity:.55'}"><input type="checkbox" data-ch="${k}" ${!chOn[k] ? 'disabled' : draft?.results?.[k]?.ok ? '' : 'checked'} style="width:16px;height:16px;flex:none;margin-top:2px"><span><b>${n}</b> <span class="small muted">— ${esc(chNote[k])}</span></span></label>`).join('')}</div>
+      <div class="inline"><button class="primary" id="pbGo">🚀 Опубликовать</button>${cur.id ? '<button type="button" class="ghost danger" id="pbDel">Удалить черновик</button>' : ''}</div>
+      <div id="pbRes" style="margin-top:10px"></div></div>
+    <div>
+      <div class="card"><h2>Подключения</h2>
+        <div class="small muted" style="margin-bottom:8px"><b>MAX</b> — чат или канал для публикаций выбирается в Настройках → MAX (бот должен быть администратором).<br>
+        <b>Telegram</b> — добавьте бота студии (из Настроек → Telegram) <b>администратором канала</b> с правом публикации и укажите канал: <code>@имя_канала</code> или его ID.<br>
+        <b>ВКонтакте</b> — нужен ключ доступа администратора группы с правами <i>wall, photos, video</i> и ID группы. Ключ сообщества из настроек группы фото на стену не загружает — понадобится ключ пользователя (VK ID).</div>
+        <div class="row"><div class="field"><label>Telegram-канал</label><input id="pbTg" value="${esc(st.tg_post_chat)}" placeholder="@bscaraudio38"></div></div>
+        <div class="row"><div class="field"><label>ID группы ВКонтакте</label><input id="pbVg" value="${esc(st.vk_group_id)}" placeholder="bscaraudio38 или 123456"></div>
+          <div class="field"><label>Ключ доступа ВКонтакте ${st.vk_token ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="pbVt" type="password" autocomplete="new-password" placeholder="${st.vk_token ? '•••••• (не менять)' : 'vk1.a.…'}"></div></div>
+        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>
+      <div class="card"><h2>Публикации</h2>${list.length ? list.map((p) => `<div class="li" style="align-items:flex-start;gap:10px">
+        ${p.media[0] ? (p.media[0].kind === 'video' ? `<video src="/api/pubs/${p.id}/media/${p.media[0].id}#t=0.5" muted preload="metadata" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"></video>` : `<img src="/api/pubs/${p.id}/media/${p.media[0].id}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none" alt="">`) : '<div style="width:64px;height:64px;border-radius:8px;background:var(--line);flex:none"></div>'}
+        <div class="grow"><div class="t">${esc(p.title || (p.text || '').slice(0, 60) || 'Без текста')}</div>
+          <div class="s">${p.status === 'draft' ? 'черновик' : dt(p.published_at)} · ${p.media.length} фото/видео ${resBadges(p)}</div>
+          <div class="inline" style="gap:6px;margin-top:4px;flex-wrap:wrap">${p.status === 'draft' || p.status === 'error' || p.status === 'partial' ? `<button type="button" class="sm" data-pbopen="${p.id}">${p.status === 'draft' ? 'Продолжить' : 'Открыть / повторить'}</button>` : ''}
+            ${p.status !== 'draft' ? `<label class="small" style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" data-pbsite="${p.id}" ${p.site_visible ? 'checked' : ''}> на сайте</label>` : ''}
+            <button type="button" class="sm ghost danger" data-pbdel="${p.id}">Удалить</button></div></div></div>`).join('') : '<div class="muted small">Пока ничего не публиковали.</div>'}</div>
+    </div></div>`;
+  const X = $('#pbX', box), T = $('#pbT', box);
+  const cnt = () => { const n = X.value.length; $('#pbCnt', box).textContent = `${n} знаков${n > 1024 ? ' · в Telegram текст длиннее 1024 знаков уйдёт отдельным сообщением после фото' : ''}`; };
+  X.oninput = cnt; cnt();
+  const ensure = async () => { if (!cur.id) cur.id = (await POST('/api/pubs', { order_id: cur.order_id || null, title: T.value, text: X.value })).id; return cur.id; };
+  const drawMedia = () => {
+    $('#pbM', box).innerHTML = cur.media.map((m, i) => `<div class="ph" style="position:relative">${m.kind === 'video' ? `<video src="/api/pubs/${cur.id}/media/${m.id}#t=0.5" muted preload="metadata"></video><span style="position:absolute;left:6px;bottom:4px;color:#fff;text-shadow:0 1px 4px #000">▶</span>` : `<img src="/api/pubs/${cur.id}/media/${m.id}" alt="">`}
+      <button type="button" class="ghost sm danger" data-mrm="${m.id}" style="position:absolute;top:2px;right:2px;padding:2px 6px;background:rgba(0,0,0,.55)">✕</button>${i ? `<button type="button" class="ghost sm" data-mfirst="${m.id}" title="Сделать обложкой" style="position:absolute;top:2px;left:2px;padding:2px 6px;background:rgba(0,0,0,.55)">★</button>` : ''}</div>`).join('') || '<span class="muted small">Пока нет фото или видео</span>';
+    $$('[data-mrm]', box).forEach((b) => (b.onclick = async () => { await DEL(`/api/pubs/${cur.id}/media/${b.dataset.mrm}`); await refreshMedia(); }));
+    $$('[data-mfirst]', box).forEach((b) => (b.onclick = async () => { await POST(`/api/pubs/${cur.id}/media/${b.dataset.mfirst}/first`); await refreshMedia(); }));
+  };
+  const refreshMedia = async () => { if (!cur.id) return drawMedia(); const p = (await GET('/api/pubs')).find((x) => x.id === cur.id); cur.media = p ? p.media : []; drawMedia(); };
+  drawMedia();
+  const loadSug = async () => {
+    const sb = $('#pbSug', box); cur.order_id = $('#pbO', box).value; sb.innerHTML = '';
+    if (!cur.order_id) return;
+    let s; try { s = await GET('/api/pubs/suggest' + qs({ order_id: cur.order_id })); } catch (e) { sb.textContent = e.message; return; }
+    sb.innerHTML = `<div class="field"><label>Текст по заказ-наряду</label><div class="inline" style="flex-wrap:wrap;gap:6px">${['Подробно', 'Коротко', 'С вопросом'].map((n, i) => `<button type="button" class="sm" data-var="${i}">✍️ ${n}</button>`).join('')}</div>
+      <div class="small muted" style="margin-top:4px">Работы: ${esc(s.works.join(', ') || '—')}${s.goods.length ? ' · товары: ' + esc(s.goods.join(', ')) : ''}</div></div>
+      ${s.photos.length ? `<div class="field"><label>Фото из заказа — нажмите, чтобы добавить в пост</label><div class="photos">${s.photos.map((ph) => `<button type="button" class="ph" data-oph="${ph.id}"><img loading="lazy" src="/api/photos/${ph.id}" alt=""></button>`).join('')}</div>
+        <button type="button" class="sm" id="pbAllPh" style="margin-top:6px">Добавить все фото заказа</button></div>` : '<div class="small muted" style="margin-bottom:8px">В заказе нет фото — загрузите свои ниже.</div>'}`;
+    $$('[data-var]', sb).forEach((b) => (b.onclick = async () => { if (X.value.trim() && !(await confirmBox('Заменить текущий текст поста?', 'Заменить'))) return; X.value = s.variants[+b.dataset.var]; if (!T.value) T.value = s.title; cnt(); }));
+    const addPh = async (ids) => { try { await ensure(); const r = await POST(`/api/pubs/${cur.id}/media/from-order`, { photo_ids: ids }); toast(r.added ? `Добавлено фото: ${r.added}` : 'Эти фото уже в посте'); await refreshMedia(); } catch (e) { toast(e.message, true); } };
+    $$('[data-oph]', sb).forEach((b) => (b.onclick = () => addPh([+b.dataset.oph])));
+    const ap = $('#pbAllPh', sb); if (ap) ap.onclick = () => addPh(s.photos.map((x) => x.id));
+    if (!X.value.trim()) { X.value = s.variants[0]; T.value = T.value || s.title; cnt(); }
+  };
+  $('#pbO', box).onchange = loadSug; if (cur.order_id) loadSug();
+  $('#pbF', box).onchange = async (e) => {
+    const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+    try { await ensure(); } catch (err) { return toast(err.message, true); }
+    for (const [n, f] of files.entries()) {
+      const up = $('#pbUp', box);
+      try {
+        let blob = f;
+        if (f.type.startsWith('image/')) { const d = await shrinkImage(f, 2000, 0.86); blob = await (await fetch(d)).blob(); }
+        else if (!f.type.startsWith('video/')) throw new Error('Можно только фото или видео');
+        else if (f.size > 50 * 1024 * 1024) throw new Error('видео больше 50 МБ — сожмите или обрежьте');
+        await uploadRaw(`/api/pubs/${cur.id}/media`, blob, (pc) => { up.textContent = `Загрузка ${n + 1} из ${files.length}: ${pc}%`; });
+      } catch (err) { toast(`${f.name}: ${err.message}`, true); }
+    }
+    $('#pbUp', box).textContent = ''; await refreshMedia();
+  };
+  $('#pbGo', box).onclick = async () => {
+    const chs = $$('[data-ch]:checked', box).map((c) => c.dataset.ch);
+    if (!cur.media.length) return toast('Добавьте хотя бы одно фото или видео — без них пост не публикуется', true);
+    if (!X.value.trim()) return toast('Напишите текст поста', true);
+    if (!chs.length) return toast('Отметьте, куда публиковать', true);
+    if (!(await confirmBox(`Опубликовать пост: ${chs.map((k) => PUB_CH.find((x) => x[0] === k)[1]).join(', ')}?`, 'Опубликовать'))) return;
+    const btn = $('#pbGo', box); btn.disabled = true; btn.textContent = '⏳ Публикуем…';
+    try {
+      await ensure(); await PUT('/api/pubs/' + cur.id, { order_id: cur.order_id || null });
+      const r = await POST(`/api/pubs/${cur.id}/publish`, { channels: chs, title: T.value, text: X.value });
+      const ok = Object.values(r.results).every((x) => x.ok);
+      $('#pbRes', box).innerHTML = Object.entries(r.results).map(([k, v]) => `<div class="small">${v.ok ? '✅' : '❌'} <b>${PUB_CH.find((x) => x[0] === k)[1]}</b> ${v.ok ? (v.url ? `<a href="${esc(v.url)}" target="_blank" rel="noopener">открыть</a>` : 'готово') : esc(v.error || '')}</div>`).join('');
+      toast(ok ? 'Опубликовано везде' : 'Опубликовано не везде — см. ошибки', !ok);
+      if (ok) setTimeout(() => go('/marketing' + qs({ tab: 'pubs' })), 1500);
+    } catch (e) { toast(e.message, true); }
+    btn.disabled = false; btn.textContent = '🚀 Опубликовать';
+  };
+  const dd = $('#pbDel', box); if (dd) dd.onclick = async () => { if (await confirmBox('Удалить черновик?', 'Удалить')) { await DEL('/api/pubs/' + cur.id); go('/marketing' + qs({ tab: 'pubs' })); } };
+  $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
+  $('#pbTtg', box).onclick = async () => { try { const r = await POST('/api/pubs/test/tg'); toast('Telegram: канал «' + (r.name || '') + '» доступен'); } catch (e) { toast(e.message, true); } };
+  $('#pbTvk', box).onclick = async () => { try { const r = await POST('/api/pubs/test/vk'); toast('ВКонтакте: группа «' + (r.name || '') + '» доступна'); } catch (e) { toast(e.message, true); } };
+  $$('[data-pbopen]', box).forEach((b) => (b.onclick = () => go('/marketing' + qs({ tab: 'pubs', pub: b.dataset.pbopen }))));
+  $$('[data-pbsite]', box).forEach((c) => (c.onchange = async () => { await PUT('/api/pubs/' + c.dataset.pbsite, { site_visible: c.checked }); toast(c.checked ? 'Показывается на сайте' : 'Убрано с сайта'); }));
+  $$('[data-pbdel]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить публикацию? С сайта она пропадёт; в MAX, Telegram и ВКонтакте пост останется — его удаляют там.', 'Удалить')) { await DEL('/api/pubs/' + b.dataset.pbdel); mkPubs(box, query); } }));
+}
 
 async function mkAnalytics(box, query) {
   const from = query.from || today().slice(0, 8) + '01', to = query.to || today();
@@ -2064,7 +2179,7 @@ async function mkPlan(box, query) {
       <div class="card"><h2>Контент из ваших работ</h2><div class="small muted" style="margin-bottom:8px">Выданные заказ-наряды — готовые темы для постов «до/после». Фото берите из карточки заказа.</div>
         <div class="mk-works">${works.map((w) => `<div class="mk-work ${w.used ? 'used' : ''}">${w.photo_id ? `<img src="/api/photos/${w.photo_id}" alt="" loading="lazy">` : '<div class="nop">нет фото</div>'}
           <div><b>${esc([w.brand, w.model].filter(Boolean).join(' ') || 'Автомобиль')}</b><div class="small muted">${esc((w.items || '').slice(0, 90))}</div><div class="small muted">${dmy(w.date)} · фото: ${w.photos}</div>
-          <div class="inline" style="gap:6px;margin-top:4px"><a class="btn sm" href="#/orders/${w.id}">Заказ</a>${w.used ? '<span class="badge ok">в плане</span>' : `<button type="button" class="sm" data-work="${w.id}">В контент-план</button>`}</div></div></div>`).join('') || '<div class="muted">Пока нет выданных заказов</div>'}</div></div>
+          <div class="inline" style="gap:6px;margin-top:4px"><a class="btn sm" href="#/orders/${w.id}">Заказ</a><a class="btn sm" href="#/marketing?tab=pubs&order=${w.id}">📣 Опубликовать</a>${w.used ? '<span class="badge ok">в плане</span>' : `<button type="button" class="sm" data-work="${w.id}">В контент-план</button>`}</div></div></div>`).join('') || '<div class="muted">Пока нет выданных заказов</div>'}</div></div>
     </div>`;
   const postModal = (p = {}) => modal(p.id ? 'Публикация' : 'Новая публикация', `
     <div class="field"><label>Тема *</label><input name="title" required value="${esc(p.title || '')}"></div>

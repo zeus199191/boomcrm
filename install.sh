@@ -138,7 +138,7 @@ cat > /etc/nginx/sites-available/boomcrm <<EOF
 server {
     listen $LISTEN;
     server_name $SERVER_NAME;
-    client_max_body_size 20m;
+    client_max_body_size 60m;
     server_tokens off;
 
     gzip on;

@@ -81,7 +81,7 @@ const server = http.createServer(async (req, res) => {
         if (origin && new URL(origin).host !== req.headers.host) throw new HttpError(403, 'Запрос с чужого сайта');
       }
       const ctx = { req, res, user, token: cookies.sid, params: m.params, query: Object.fromEntries(url.searchParams), body: {} };
-      if (req.method !== 'GET') ctx.body = await readBody(req, pathname === '/api/products/import-price' || pathname === '/api/clients/import' || pathname === '/api/bank/upload' || /^\/api\/orders\/\d+\/photos$/.test(pathname) ? 15 * 1024 * 1024 : undefined);
+      if (req.method !== 'GET' && !/^\/api\/pubs\/\d+\/media$/.test(pathname)) ctx.body = await readBody(req, pathname === '/api/products/import-price' || pathname === '/api/clients/import' || pathname === '/api/bank/upload' || /^\/api\/orders\/\d+\/photos$/.test(pathname) ? 15 * 1024 * 1024 : undefined);
       let result;
       for (const fn of fns) { result = await fn(ctx); }
       if (result !== undefined) send(res, 200, result);
@@ -94,6 +94,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, require('./lib/landing').render({ loggedIn: !!user }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     }
     if (req.method === 'GET' && pathname.startsWith('/brand-logo/') && require('./lib/brands').serve(req, res, pathname)) return;
+    if (req.method === 'GET' && pathname.startsWith('/works-media/') && require('./lib/pubs').serve(req, res, pathname)) return;
     if (req.method === 'GET' && (pathname === '/avtozvuk' || pathname === '/avtozvuk/')) {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
       return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'sound' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
