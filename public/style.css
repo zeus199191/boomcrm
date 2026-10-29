@@ -463,3 +463,9 @@ i.rv { background: var(--accent); } i.ld { background: #4ea1ff; }
 .ba .bl { height: 40px; display: grid; place-items: center; background: #e9eef2; border-radius: 8px; padding: 4px 8px; }
 .ba .bl img { max-width: 100%; max-height: 32px; filter: brightness(0); opacity: .85; }
 .ba .bn b { display: block; } 
+/* позиции операции контрагента */
+.opitems { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12.5px; }
+.opitems td { padding: 2px 6px 2px 0 !important; border: 0 !important; color: var(--muted); display: table-cell !important; }
+.opitems td::before { content: none !important; }
+.opitems td.r { text-align: right; white-space: nowrap; }
+.opitems tr { display: table-row !important; padding: 0 !important; border: 0 !important; }
