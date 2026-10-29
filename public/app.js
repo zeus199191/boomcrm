@@ -223,7 +223,7 @@ const NAV = [
 
 function renderShell() {
   const u = S.me.user;
-  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice()) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
+  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice() && (n[0] !== '/stock' || S.me.stock_on)) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
   $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
@@ -422,7 +422,7 @@ function voiceOrderModal() {
 async function newOrderModal(pre = {}) {
   const bays = S.me.bays;
   const est = !!pre.estimate;
-  const m = modal(est ? 'Предварительный расчёт' : 'Новый заказ-наряд', `${est ? '<div class="small muted" style="margin-bottom:10px">Расчёт не попадает в журнал записи и не списывает склад. Когда клиент согласится — переведёте его в заказ-наряд одной кнопкой.</div>' : ''}
+  const m = modal(est ? 'Предварительный расчёт' : 'Новый заказ-наряд', `${est ? '<div class="small muted" style="margin-bottom:10px">Расчёт не попадает в журнал записи и ни на что не влияет. Когда клиент согласится — переведёте его в заказ-наряд одной кнопкой.</div>' : ''}
     <input type="hidden" name="client_id" value="${esc(pre.client_id || '')}">
     <input type="hidden" name="lead_id" value="${esc(pre.lead_id || '')}">
     <div class="field" id="clientPick"><label>Клиент — поиск по имени, телефону, госномеру</label>
@@ -514,39 +514,22 @@ route(/^\/orders$/, async (page, query) => {
   await load();
 });
 
-// ---------- Товар в заказ: со склада или от поставщика ----------
-function productAddModal(o, p, suppliers, reload, est = false) {
-  const free = p.stock - (p.reserved || 0);
-  const m = modal('Товар в заказ', `
-    <div style="margin-bottom:10px"><b>${esc(p.name)}</b><div class="small muted">На складе: <b>${num(p.stock)} ${esc(p.unit)}</b>${p.reserved ? ` · в резерве под другие заказы <b>${num(p.reserved)}</b> · свободно <b style="color:${free > 0 ? 'inherit' : 'var(--bad)'}">${num(Math.max(free, 0))}</b>` : ''} · розница ${rub(p.price)}${p.cost ? ' · закупка ' + rub(p.cost) : ''}</div></div>
+// ---------- Товар в заказ ----------
+const supOpts = (contrs, cur) => opts(contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner').map((c) => [c.id, c.name]), cur || '', '— не указано —');
+function productAddModal(o, p, contrs, reload, est = false) {
+  const stockOn = S.me.stock_on; const free = p.stock - (p.reserved || 0);
+  modal('Товар в заказ', `
+    <div style="margin-bottom:10px"><b>${esc(p.name)}</b><div class="small muted">${stockOn ? `На складе: <b>${num(p.stock)} ${esc(p.unit)}</b>${p.reserved ? ` · в резерве <b>${num(p.reserved)}</b>` : ''} · ` : ''}розница ${rub(p.price)}${p.cost ? ' · закупка ' + rub(p.cost) : ''}</div></div>
     <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
     <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" value="${p.price}" step="any"></div></div>
-    <label class="debtchk" ${est ? 'style="display:none"' : ''}><input type="checkbox" name="debt"><span><b>В долг</b> — весь товар берём у поставщика, на складе ничего не трогаем</span></label>
-    <div class="row" ${est ? 'style="display:none"' : ''}><div class="field"><label>Поставщик (у кого взят / будет взят)</label><select name="contractor_id">${opts(suppliers.map((c) => [c.id, c.name]), '', '— со склада / назначу позже —')}</select></div>
-    <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${p.cost || ''}" step="any"></div></div>
-    <div class="small" id="hint"></div>`,
+    ${est ? '' : `<div class="row"><div class="field"><label>Чей товар (внутренняя пометка для гарантии)</label><select name="contractor_id">${supOpts(contrs)}</select></div>
+    <div class="field"><label>Или вписать</label><input name="supplier_note" placeholder="напр. товар клиента, Спарта"></div></div>`}`,
   { submit: 'Добавить', onSubmit: async (d) => {
     const qty = +d.qty || 1;
-    const miss = d.debt ? qty : Math.max(0, qty - Math.max(free, 0));
-    if (!est && !d.contractor_id && !d.debt && miss > 0 && !(await confirmBox(`Свободно на складе ${num(Math.max(free, 0))}${p.reserved ? ` (ещё ${num(p.reserved)} в резерве под другие заказы)` : ''}, а нужно ${num(qty)}. Добавить без поставщика? Остаток уйдёт в минус.`, 'Добавить'))) return false;
-    if (!est && (d.contractor_id || d.debt) && miss > 0 && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг поставщику', true); return false; }
-    await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty, price: d.price, cost: d.cost, contractor_id: d.contractor_id || null, debt: !!d.debt });
+    if (stockOn && !est && qty > Math.max(free, 0) && !(await confirmBox(`Свободно на складе ${num(Math.max(free, 0))}, а нужно ${num(qty)}. Добавить? Остаток уйдёт в минус.`, 'Добавить'))) return false;
+    await POST(`/api/orders/${o.id}/items`, { kind: 'product', ref_id: p.id, qty, price: d.price, contractor_id: d.contractor_id || null, supplier_note: d.supplier_note || '' });
     reload();
   } });
-  const f = m.form;
-  let touched = false; f.debt.addEventListener('change', () => { touched = true; });
-  const hint = () => {
-    if (est) { $('#hint', f).innerHTML = '<span class="muted">В расчёте склад не резервируется — поставщика укажете после перевода в заказ-наряд.</span>'; return; }
-    const qty = +f.qty.value || 0;
-    if (!touched) f.debt.checked = qty > Math.max(free, 0); // не хватает свободного товара — по умолчанию «в долг»
-    const miss = f.debt.checked ? qty : Math.max(0, qty - Math.max(free, 0));
-    const sup = f.contractor_id.selectedOptions[0];
-    $('#hint', f).innerHTML = !miss ? (f.contractor_id.value ? `<span class="muted">Товар есть на складе — долг не возникнет, поставщик будет указан в заказе.</span>` : '<span class="muted">Возьмём со склада (спишется при выдаче заказа).</span>')
-      : f.contractor_id.value ? `<span style="color:var(--warn)">${f.debt.checked ? 'В долг' : 'Не хватает'} ${num(miss)} — при выдаче заказа оприходуем от «${esc(sup.textContent)}», долг ${rub(miss * (+f.cost.value || 0))}.</span>`
-      : f.debt.checked ? `<span style="color:var(--warn)">В долг ${num(miss)} — поставщика можно назначить позже (в заказе, до выдачи). Долг запишется при выдаче.</span>`
-      : `<span style="color:var(--bad)">Свободно на складе ${num(Math.max(free, 0))} — не хватает ${num(miss)}. Отметьте «В долг» или выберите поставщика.</span>`;
-  };
-  ['input', 'change'].forEach((ev) => f.addEventListener(ev, hint)); hint();
 }
 
 // Товар не из каталога (вписывается вручную)
@@ -556,7 +539,7 @@ function customProductModal(o, name, reload) {
     <div class="row"><div class="field"><label>Количество</label><input type="number" name="qty" value="1" min="0.01" step="any" required></div>
     <div class="field"><label>Цена для клиента, ₽</label><input type="number" name="price" step="any" required></div>
     <div class="field"><label>Закупка, ₽ (необязательно)</label><input type="number" name="cost" step="any"></div></div>
-    <div class="small muted">Товар не будет списываться со склада — его нет в каталоге.</div>`,
+    ${S.me.stock_on ? '<div class="small muted">Товар не будет списываться со склада — его нет в каталоге.</div>' : ''}`,
   { submit: 'Добавить', onSubmit: async (d) => { await POST(`/api/orders/${o.id}/items`, { kind: 'product', name: d.name, qty: d.qty, price: d.price, cost: d.cost, warranty_months: 0 }); reload(); } });
 }
 
@@ -654,11 +637,10 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   const svc = o.items.filter((i) => i.kind === 'service'); const prd = o.items.filter((i) => i.kind === 'product');
   const canSup = office && !['estimate', 'cancelled'].includes(o.status);
   const supLine = (i) => {
-    const dq = Math.min(i.qty, i.debt_qty || i.qty);
-    const sup = i.contractor_name ? `🚚 ${esc(i.contractor_name)}` : (i.debt_mode ? '<span style="color:var(--warn)">⚠ поставщик не назначен</span>' : '');
-    const debt = i.debt_op_id ? ` · в долг ${num(i.supplied_qty || dq)} шт — <b>долг записан</b>` : i.debt_mode ? ` · в долг ${num(dq)} шт <span class="muted">(запишется при выдаче)</span>` : '';
-    const btn = canSup && i.ref_id ? `<button type="button" class="linkbtn" data-sup="${i.id}">${sup || debt ? 'изменить' : '＋ Поставщик / в долг'}</button>` : '';
-    return sup || debt || btn ? `<div class="small muted" style="margin-top:2px">${sup}${debt} ${btn}</div>` : '';
+    if (!office) return '';
+    const who = [i.contractor_name, i.supplier_note].filter(Boolean).map(esc).join(', ');
+    const btn = canSup ? `<button type="button" class="linkbtn" data-sup="${i.id}">${who ? 'изменить' : '＋ чей товар'}</button>` : '';
+    return who || btn ? `<div class="small muted" style="margin-top:2px">${who ? `🏷 Товар: ${who}` : ''} ${btn}</div>` : '';
   };
   const itemRows = (list, kind) => list.map((i) => `<tr data-item="${i.id}">
     <td data-l="Позиция" style="min-width:240px">${office ? `<input value="${esc(i.name)}" data-f="name" title="${esc(i.name)}">` : esc(i.name)}${kind === 'product' ? supLine(i) : ''}</td>
@@ -674,7 +656,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     ${office && isEst ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/estimate">🖨 Бланк расчёта</a></div>` : ''}
     ${office && !isEst ? `<div class="inline"><a class="btn sm" target="_blank" href="/print/order/${o.id}/accept">🖨 Акт приёма</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/naryad">🖨 Заказ-наряд</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/act">🖨 Акт работ</a><a class="btn sm" target="_blank" href="/print/order/${o.id}/warranty">🖨 Гарантия</a><button class="sm" id="toWarranty">🛡 Принять на гарантию</button></div>` : ''}</div>
   ${isEst ? `<div class="card estcard" style="margin-bottom:14px"><div class="inline" style="flex-wrap:wrap;gap:12px"><div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px">Предварительный расчёт</h2>
-    <div class="small muted">Цены актуальны на дату обращения — <b>${dmy(o.estimate_at || o.created_at)}</b>. Пока это расчёт: в журнал не попадает, склад не списывается, долги поставщикам не создаются.</div></div>
+    <div class="small muted">Цены актуальны на дату обращения — <b>${dmy(o.estimate_at || o.created_at)}</b>. Пока это расчёт: в журнал не попадает.</div></div>
     ${office ? `<button type="button" class="ghost sm danger" id="estCancel">Клиент отказался</button><button type="button" class="primary" id="estConvert">✅ Клиент согласен — в заказ-наряд</button>` : ''}</div></div>` : ''}
   <div class="card" style="margin-bottom:14px${isEst ? ';display:none' : ''}"><h3>Статус</h3>${office ? `<div class="pipe">${statusButtons.map((s) => `<button type="button" data-st="${s}" class="${s === o.status ? 'cur' : ''}">${S.me.statuses[s]}</button>`).join('')}</div>` : `<span class="badge">${esc(S.me.statuses[o.status] || o.status)}</span> <span class="muted small">— статус меняет руководитель</span>`}
     ${o.status === 'done' && office && t.due > 0.5 ? `<div class="small" style="margin-top:8px;color:var(--warn)">Перед выдачей примите оплату: к оплате ${rub(t.due)}</div>` : ''}</div>
@@ -684,8 +666,8 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       ${office ? `<div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start"><div style="flex:1"><input id="addSvc" placeholder="+ Добавить работу: начните вводить название из прайса или своё"></div>${['issued', 'cancelled'].includes(o.status) ? '' : '<button type="button" id="addPkg" title="Добавить готовый комплекс работ и товаров" style="white-space:nowrap">📦 Комплекс</button>'}</div>` : ''}</div>
     <div class="card"><h2>Товары и материалы</h2><div class="tblwrap"><table class="tbl resp"><thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th class="r">Сумма</th><th title="Гарантия, мес.">Гар., мес</th>${office ? '<th></th>' : ''}</tr></thead>
       <tbody>${itemRows(prd, 'product') || `<tr><td colspan="6" class="muted">Товаров нет</td></tr>`}</tbody></table></div>
-      ${office ? `<div style="margin-top:10px"><div><input id="addPrd" placeholder="+ Добавить товар со склада: название, артикул, бренд"></div></div>` : ''}
-      ${issuedLocked && prd.length ? '<div class="small muted" style="margin-top:6px">Товары списаны со склада при выдаче</div>' : ''}</div>
+      ${office ? `<div style="margin-top:10px"><div><input id="addPrd" placeholder="+ Добавить товар: название, артикул, бренд"></div></div>` : ''}
+      ${S.me.stock_on && issuedLocked && prd.length ? '<div class="small muted" style="margin-top:6px">Товары списаны со склада при выдаче</div>' : ''}</div>
     ${office ? `<div class="card"><div class="totals">
       <div><span class="muted">Работы</span><span class="mono">${rub(t.services)}</span></div>
       <div><span class="muted">Товары</span><span class="mono">${rub(t.goods)}</span></div>
@@ -703,7 +685,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
     ${o.payments.length ? `<h3 style="margin-top:14px">Платежи</h3><table class="tbl"><tbody>${o.payments.map((p) => `<tr><td class="nowrap">${dt(p.created_at)}</td><td>${p.direction === 'out' ? 'Возврат' : 'Оплата'} · ${METHODS[p.method] || p.method}</td><td class="muted">${esc(p.user || '')}${p.acquiring ? `<div class="small">эквайринг −${rub(p.acquiring)} (наш расход)</div>` : ''}</td><td class="r mono" style="color:${p.direction === 'out' ? 'var(--bad)' : 'inherit'}">${p.direction === 'out' ? '−' : ''}${rub(p.amount)}</td></tr>`).join('')}</tbody></table>` : ''}
     ${o.accruals.length ? `<h3 style="margin-top:14px">Начислено мастерам</h3><table class="tbl"><tbody>${o.accruals.map((a) => `<tr><td>${esc(a.user || '')}</td><td class="muted">${esc(a.name)}</td><td class="r muted">${a.percent}% от ${rub(a.base)}</td><td class="r mono">${rub(a.amount)}</td></tr>`).join('')}</tbody></table>` : o.status === 'issued' ? '' : '<div class="small muted" style="margin-top:12px">Зарплата мастерам начислится автоматически при статусе «Выдан».</div>'}</div>` : ''}
   </div><div>
-    <div class="card"><h2>Клиент и автомобиль</h2>${o.contractor_name ? `<div class="field"><span class="badge">🤝 ${esc(o.contractor_name)}</span></div>` : ''}
+    <div class="card"><h2>Клиент и автомобиль</h2>
       <div class="field"><b>${o.client_id && office ? `<a href="#/clients/${o.client_id}">${esc(o.client_name)}</a>` : esc(o.client_name || '—')}</b>
       ${o.client_phone ? `<div><a href="tel:${esc(o.client_phone)}">${esc(o.client_phone)}</a></div>` : ''}</div>
       ${office && o.master_id ? `<button type="button" class="sm" id="msgMaster" style="margin-bottom:10px">✉ Написать мастеру (${esc(o.master_name || '')})</button>` : ''}
@@ -716,7 +698,6 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
       <div class="field"><label>На посту до</label><input type="date" name="end_date" value="${esc(o.end_date || '')}" ${office ? '' : 'disabled'}></div></div>
       <div class="row"><div class="field"><label>Длительность, ч</label><input type="number" name="duration_h" value="${(o.duration_min || 120) / 60}" step="0.5" min="0.5" ${office ? '' : 'disabled'}></div>
       <div class="field"><label>Пост</label><select name="bay" ${office ? '' : 'disabled'}>${opts(S.me.bays, o.bay, '—')}</select></div></div>
-      ${office ? `<div class="field"><label>Контрагент (партнёр / плательщик)</label><select name="contractor_id">${opts(contrs.map((c) => [c.id, c.name]), o.contractor_id, '— частный клиент —')}</select></div>` : ''}
       <div class="row"><div class="field"><label>Мастер</label><select name="master_id" ${office ? '' : 'disabled'}>${masterOpts(o.master_id)}</select></div>
       <div class="field"><label>Пробег, км</label><input type="number" name="mileage" value="${esc(o.mileage || '')}" ${office ? '' : 'disabled'}></div></div>
       <div class="field"><label>Пожелания клиента</label><textarea name="complaint" ${office ? '' : 'disabled'}>${esc(o.complaint || '')}</textarea></div>
@@ -779,24 +760,13 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   });
   $$('[data-sup]', page).forEach((b) => (b.onclick = () => {
     const i = o.items.find((x) => x.id === +b.dataset.sup);
-    const sup = contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner');
-    const booked = !!i.debt_op_id;
-    const m = modal('Поставщик товара', `<div style="margin-bottom:10px"><b>${esc(i.name)}</b> × ${num(i.qty)}
-      <div class="small muted">${booked ? 'Заказ выдан — долг поставщику уже записан. Можно сменить поставщика или закупочную цену; снимите галочку «В долг», чтобы отменить долг.' : 'Долг поставщику и приход товара запишутся, когда заказ получит статус «Выдан». До этого поставщика можно менять или назначить позже.'}</div></div>
-      <div class="field"><label>Поставщик</label><select name="contractor_id">${opts(sup.map((c) => [c.id, c.name]), i.contractor_id || '', '— будет назначен позже —')}</select></div>
-      <label class="debtchk"><input type="checkbox" name="debt" ${i.debt_mode || booked ? 'checked' : ''}><span><b>В долг у поставщика</b> — товар берём у поставщика, склад не трогаем</span></label>
-      <div class="row" id="dqr"><div class="field"><label>Количество в долг</label><input type="number" name="qty" value="${Math.min(i.qty, i.debt_qty || i.qty)}" min="0.01" max="${i.qty}" step="any" ${booked ? 'disabled' : ''}></div>
-      <div class="field"><label>Закупочная цена, ₽</label><input type="number" name="cost" value="${i.cost || ''}" step="any"></div></div>
-      <div class="small" id="sh"></div>`,
+    modal('Чей товар', `<div style="margin-bottom:10px"><b>${esc(i.name)}</b> × ${num(i.qty)}
+      <div class="small muted">Внутренняя пометка — чей товар смонтирован (нужно для гарантии). Клиент её не видит, на долги и склад не влияет.</div></div>
+      <div class="field"><label>Контрагент</label><select name="contractor_id">${supOpts(contrs, i.contractor_id)}</select></div>
+      <div class="field"><label>Или вписать</label><input name="supplier_note" value="${esc(i.supplier_note || '')}" placeholder="напр. товар клиента"></div>`,
     { submit: 'Сохранить', onSubmit: async (d) => {
-      if (d.debt && !(+d.cost > 0)) { toast('Укажите закупочную цену — по ней посчитается долг', true); return false; }
-      if (booked && d.debt && !d.contractor_id) { toast('Долг уже записан — выберите поставщика', true); return false; }
-      if (booked && !d.debt && !(await confirmBox('Отменить долг поставщику? Товар будет считаться взятым со склада.', 'Отменить долг'))) return false;
       try { await PUT(`/api/order-items/${i.id}/supplier`, d); toast('Сохранено'); reload(); } catch (e) { toast(e.message, true); return false; }
     } });
-    const f = m.form; const upd = () => { $('#dqr', f).style.display = f.debt.checked ? '' : 'none';
-      $('#sh', f).innerHTML = f.debt.checked ? (f.contractor_id.value ? `<span class="muted">Долг ${rub((+f.qty.value || 0) * (+f.cost.value || 0))} перед «${esc(f.contractor_id.selectedOptions[0].textContent)}»${booked ? '' : ' — запишется при выдаче'}.</span>` : '<span style="color:var(--warn)">Поставщика нужно будет назначить до выдачи заказа — иначе статус «Выдан» не поставится.</span>') : '<span class="muted">Товар со склада, долга нет.</span>'; };
-    ['input', 'change'].forEach((ev) => f.addEventListener(ev, upd)); upd();
   }));
   $$('[data-del]', page).forEach((b) => (b.onclick = async () => {
     if (!(await confirmBox('Удалить позицию из заказа?', 'Удалить'))) return;
@@ -825,8 +795,8 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   });
   autocomplete($('#addPrd', page), {
     search: (q) => GET('/api/products' + qs({ q })).then((r) => [...r.slice(0, 15), ...(q ? [{ custom: true, name: q }] : [])]),
-    render: (p) => p.custom ? `+ Свой товар (нет в каталоге): <b>${esc(p.name)}</b>` : `<div>${esc(p.name)} ${p.sku ? `<span class="s">${esc(p.sku)}</span>` : ''}</div><div class="s">${rub(p.price)} · на складе ${num(p.stock)} ${esc(p.unit)}${p.reserved ? ` · в резерве ${num(p.reserved)} · свободно ${num(p.stock - p.reserved)}` : ''}</div>`,
-    onPick: (p) => p.custom ? customProductModal(o, p.name, reload) : productAddModal(o, p, contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other' || c.kind === 'partner'), reload, isEst),
+    render: (p) => p.custom ? `+ Свой товар (нет в каталоге): <b>${esc(p.name)}</b>` : `<div>${esc(p.name)} ${p.sku ? `<span class="s">${esc(p.sku)}</span>` : ''}</div><div class="s">${rub(p.price)}${S.me.stock_on ? ` · на складе ${num(p.stock)} ${esc(p.unit)}${p.reserved ? ` · в резерве ${num(p.reserved)} · свободно ${num(p.stock - p.reserved)}` : ''}` : ''}</div>`,
+    onPick: (p) => p.custom ? customProductModal(o, p.name, reload) : productAddModal(o, p, contrs, reload, isEst),
   });
   const ec = $('#estConvert', page);
   if (ec) ec.onclick = async () => {
@@ -1097,11 +1067,12 @@ route(/^\/leads$/, async (page) => {
 
 // ================= Склад =================
 route(/^\/stock$/, async (page) => {
-  let low = false, scope = 'stock', cat = '';
-  page.innerHTML = `<div class="topbar"><h1>Склад</h1><span class="muted" id="sum"></span><div class="sp"></div>
+  const SO = !!S.me.stock_on; // склад выключен — страница работает как каталог товаров (цены, витрина сайта) без остатков
+  let low = false, scope = SO ? 'stock' : 'all', cat = '';
+  page.innerHTML = `<div class="topbar"><h1>${SO ? 'Склад' : 'Услуги и цены'}</h1>${SO ? '' : svcTabs('prd')}<span class="muted" id="sum"></span><div class="sp"></div>
     <input class="search" id="q" placeholder="Название, артикул, бренд">
-    <button id="moves">Движения</button><button id="sabyPx" title="Выгрузить розничный прайс в Excel для загрузки в Saby">⬇ Прайс для Saby</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt">Приход</button><button class="primary" id="add">+ Товар</button></div>
-    <div class="inline" style="margin-bottom:12px"><div class="chips"><button class="chip on" data-sc="stock">На складе</button><button class="chip" data-sc="all">Весь каталог</button><button class="chip" data-sc="site" title="Товары, которые показываются на сайте ателье">На сайте</button><button class="chip" id="low">Заканчиваются</button></div>
+    <button id="moves" ${SO ? '' : 'hidden'}>Движения</button><button id="sabyPx" title="Выгрузить розничный прайс в Excel для загрузки в Saby">⬇ Прайс для Saby</button><button id="pricex">⬆ Прайс поставщика</button><button id="imp">Вставить из Excel</button><button id="receipt" ${SO ? '' : 'hidden'}>Приход</button><button class="primary" id="add">+ Товар</button></div>
+    <div class="inline" style="margin-bottom:12px"><div class="chips">${SO ? '<button class="chip on" data-sc="stock">На складе</button>' : ''}<button class="chip ${SO ? '' : 'on'}" data-sc="all">Весь каталог</button><button class="chip" data-sc="site" title="Товары, которые показываются на сайте ателье">На сайте</button><button class="chip" id="low" ${SO ? '' : 'hidden'}>Заканчиваются</button></div>
     <select id="cat" style="width:auto;max-width:280px"><option value="">Все категории</option></select></div>
     <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
   $$('[data-sc]', page).forEach((b) => (b.onclick = () => { scope = b.dataset.sc; $$('[data-sc]', page).forEach((x) => x.classList.toggle('on', x === b)); load(); }));
@@ -1134,12 +1105,12 @@ route(/^\/stock$/, async (page) => {
     rows = allRows.filter((p) => (!cat || p.category === cat) && (scope === 'site' ? p.site : scope === 'all' || low || $('#q', page).value || p.stock !== 0 || p.min_stock > 0));
     const shown = rows.slice(0, 500);
     const val = allRows.filter((p) => p.active && p.stock > 0).reduce((s, p) => s + p.stock * p.cost, 0);
-    $('#sum', page).textContent = `${rows.length} поз.${rows.length > 500 ? ' (показаны первые 500 — уточните поиск)' : ''} · на складе на ${rub(val)} по закупке`;
-    $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Товар</th><th>Артикул</th><th>Категория</th><th class="r">Закупка</th><th class="r">Цена</th><th class="r">Наценка</th><th class="r">Остаток</th><th></th></tr></thead><tbody>
+    $('#sum', page).textContent = `${rows.length} поз.${rows.length > 500 ? ' (показаны первые 500 — уточните поиск)' : ''} ${SO ? ` · на складе на ${rub(val)} по закупке` : ''}`;
+    $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Товар</th><th>Артикул</th><th>Категория</th><th class="r">Закупка</th><th class="r">Цена</th><th class="r">Наценка</th>${SO ? '<th class="r">Остаток</th><th></th>' : ''}</tr></thead><tbody>
       ${shown.map((p) => `<tr class="click" data-id="${p.id}" style="${p.active ? '' : 'opacity:.5'}"><td data-l="Товар"><b>${esc(p.name)}</b>${p.site ? ' <span class="badge ok" title="Показывается на сайте">на сайте</span>' : ''}${p.brand ? `<div class="small muted">${esc(p.brand)}</div>` : ''}</td><td data-l="Артикул" class="muted">${esc(p.sku || '')}</td><td data-l="Категория">${esc(p.category || '')}</td>
       <td data-l="Закупка" class="r mono">${num(p.cost)}</td><td data-l="Цена" class="r mono">${num(p.price)}</td><td data-l="Наценка" class="r muted">${p.cost ? Math.round((p.price / p.cost - 1) * 100) + '%' : '—'}</td>
-      <td data-l="Остаток" class="r"><span class="badge ${p.stock <= 0 ? 'red' : p.min_stock && p.stock <= p.min_stock ? 'warn' : 'ok'}">${num(p.stock)} ${esc(p.unit)}</span></td>
-      <td><button class="sm" data-move="${p.id}" title="Корректировка остатка">±</button></td></tr>`).join('')}
+      ${SO ? `<td data-l="Остаток" class="r"><span class="badge ${p.stock <= 0 ? 'red' : p.min_stock && p.stock <= p.min_stock ? 'warn' : 'ok'}">${num(p.stock)} ${esc(p.unit)}</span></td>
+      <td><button class="sm" data-move="${p.id}" title="Корректировка остатка">±</button></td>` : ''}</tr>`).join('')}
       </tbody></table>` : `<div class="empty">${scope === 'site' ? 'На сайте пока ничего не показывается. Откройте товар в «Весь каталог» и отметьте «Показывать на сайте».' : scope === 'stock' && !low ? 'На складе пока ничего нет. Оформите «Приход» или откройте «Весь каталог».' : 'Товаров не найдено'}</div>`;
   };
   const prodModal = (p = { unit: 'шт', warranty_months: 12, active: 1 }) => modal(p.id ? 'Товар' : 'Новый товар', `
@@ -1148,8 +1119,8 @@ route(/^\/stock$/, async (page) => {
     <div class="field"><label>Категория</label><input name="category" list="cats" value="${esc(p.category || '')}"><datalist id="cats">${['Магнитолы', 'Акустика', 'Сабвуферы', 'Усилители', 'Процессоры DSP', 'Провода и кабели', 'Шумоизоляция', 'Сигнализации', 'Камеры', 'Подсветка', 'Рамки и переходники', 'Расходники', ...new Set(rows.map((x) => x.category).filter(Boolean))].map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div></div>
     <div class="row"><div class="field"><label>Закупка, ₽</label><input name="cost" type="number" step="any" value="${p.cost || 0}"></div><div class="field"><label>Цена продажи, ₽</label><input name="price" type="number" step="any" value="${p.price || 0}"></div>
     <div class="field"><label>Ед. изм.</label><select name="unit">${opts(['шт', 'компл', 'м', 'лист', 'упак', 'л', 'кг'], p.unit)}</select></div></div>
-    <div class="row">${p.id ? '' : '<div class="field"><label>Начальный остаток</label><input name="stock" type="number" step="any" value="0"></div>'}
-    <div class="field"><label>Мин. остаток (оповещение)</label><input name="min_stock" type="number" step="any" value="${p.min_stock || 0}"></div><div class="field"><label>Гарантия, мес.</label><input name="warranty_months" type="number" value="${p.warranty_months ?? 12}"></div></div>
+    <div class="row">${p.id || !SO ? '' : '<div class="field"><label>Начальный остаток</label><input name="stock" type="number" step="any" value="0"></div>'}
+    ${SO ? `<div class="field"><label>Мин. остаток (оповещение)</label><input name="min_stock" type="number" step="any" value="${p.min_stock || 0}"></div>` : ''}<div class="field"><label>Гарантия, мес.</label><input name="warranty_months" type="number" value="${p.warranty_months ?? 12}"></div></div>
     ${p.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Активен (показывать в подборе)</label>` : ''}
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="site" ${p.site ? 'checked' : ''}> Показывать на сайте (витрина «Автосигнализации», цена берётся отсюда)</label>`,
   { onSubmit: async (d) => { if (p.id) await PUT('/api/products/' + p.id, d); else await POST('/api/products', d); toast('Сохранено'); load(); } });
@@ -1185,17 +1156,15 @@ route(/^\/stock$/, async (page) => {
     toast(`Добавлено: ${r.added}, обновлено: ${r.updated}`); load();
   } });
   $('#receipt', page).onclick = async () => {
-    const contrs = await contractorsList();
     const lines = [];
     const m = modal('Приход товара', `<div><input id="rq" placeholder="Найдите товар и выберите его…"></div>
       <table class="tbl" style="margin-top:10px"><thead><tr><th>Товар</th><th style="width:100px">Кол-во</th><th style="width:130px">Закупка, ₽</th><th class="r">Сумма</th><th></th></tr></thead><tbody id="rl"><tr><td colspan="5" class="muted">Пусто</td></tr></tbody></table>
       <div class="r" style="margin:10px 0;font-weight:700" id="rsum"></div>
-      <div class="row"><div class="field"><label>Поставщик</label><select name="contractor_id">${opts(contrs.filter((c) => c.kind === 'supplier' || c.kind === 'other').map((c) => [c.id, c.name]), '', '— не выбран —')}</select></div>
-      <div class="field"><label>Накладная / комментарий</label><input name="note" placeholder="накл. 123 от 15.10"></div></div>
-      <div class="row"><div class="field"><label>Оплата</label><select name="pay"><option value="now">Оплачено сейчас (расход в кассе)</option><option value="debt">В долг поставщику</option><option value="">Не учитывать оплату</option></select></div>
+      <div class="row">      <div class="field"><label>Накладная / комментарий</label><input name="note" placeholder="накл. 123 от 15.10"></div></div>
+      <div class="row"><div class="field"><label>Оплата</label><select name="pay"><option value="now">Оплачено сейчас (расход в кассе)</option><option value="">Не учитывать оплату</option></select></div>
       <div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div></div>`,
     { wide: true, submit: 'Оприходовать', onSubmit: async (d) => {
-      const r = await POST('/api/stock/receipt', { items: lines, note: d.note, pay: d.pay, method: d.method, contractor_id: d.contractor_id || null });
+      const r = await POST('/api/stock/receipt', { items: lines, note: d.note, pay: d.pay, method: d.method, });
       toast('Оприходовано на ' + rub(r.sum)); load();
     } });
     const draw = () => {
@@ -1230,15 +1199,15 @@ async function loadMaxChats(page) {
 }
 
 // ================= Комплексы (готовые пакеты работ и товаров) =================
-const svcTabs = (cur) => `<div class="chips" style="margin:0 0 0 12px">${[['svc', 'Прайс', '/services'], ['pkg', '📦 Комплексы', '/packages']].map(([k, t, h]) => `<a class="chip ${k === cur ? 'on' : ''}" href="#${h}" style="text-decoration:none">${t}</a>`).join('')}</div>`;
+const svcTabs = (cur) => `<div class="chips" style="margin:0 0 0 12px">${[['svc', 'Прайс', '/services'], ...(S.me.stock_on ? [] : [['prd', 'Товары', '/stock']]), ['pkg', '📦 Комплексы', '/packages']].map(([k, t, h]) => `<a class="chip ${k === cur ? 'on' : ''}" href="#${h}" style="text-decoration:none">${t}</a>`).join('')}</div>`;
 const pkgItemsHtml = (p) => p.items.map((i) => `<div class="small" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;${i.missing ? 'opacity:.5;text-decoration:line-through' : ''}"><span>${i.kind === 'product' ? '📦' : '🔧'} ${esc(i.name || '—')}${i.qty !== 1 ? ' × ' + i.qty : ''}</span><span class="mono muted nowrap">${rub(i.eff_price * i.qty)}</span></div>`).join('');
 // Выгрузка розничного прайса (товары + услуги) в Excel для Saby
 function sabyPriceModal() {
   let vat = 'none'; try { vat = localStorage.getItem('sabyVat') || 'none'; } catch {}
   modal('Прайс для Saby', `<div class="small muted" style="margin-bottom:10px">Файл Excel с розничными ценами из CRM. В Saby: <b>Склад → «+» → Загрузить → Номенклатуру → Из файла</b>.
     У каждой позиции постоянный «Код товара» (Т… — товар, У… — услуга), поэтому при повторной загрузке выберите «Только дополнения и изменения» — Saby обновит цены и не создаст дубли.</div>
-    <div class="checkgrid" style="margin-bottom:10px"><label class="ck"><input type="checkbox" name="goods" checked> Товары со склада</label><label class="ck"><input type="checkbox" name="services" checked> Услуги (прайс работ)</label>
-    <label class="ck"><input type="checkbox" name="stock"> Только товары в наличии</label><label class="ck"><input type="checkbox" name="zero"> Включить позиции без цены</label></div>
+    <div class="checkgrid" style="margin-bottom:10px"><label class="ck"><input type="checkbox" name="goods" checked> Товары</label><label class="ck"><input type="checkbox" name="services" checked> Услуги (прайс работ)</label>
+    ${S.me.stock_on ? '<label class="ck"><input type="checkbox" name="stock"> Только товары в наличии</label>' : ''}<label class="ck"><input type="checkbox" name="zero"> Включить позиции без цены</label></div>
     <div class="field" style="max-width:260px"><label>НДС</label><select name="vat">${opts([['none', 'Без НДС'], ['0', '0%'], ['5', '5%'], ['7', '7%'], ['10', '10%'], ['20', '20%'], ['22', '22%']], vat)}</select></div>`,
   { submit: '⬇ Скачать Excel', onSubmit: (d) => {
     if (!d.goods && !d.services) { toast('Отметьте товары или услуги', true); return false; }
@@ -1268,7 +1237,7 @@ async function packageModal(p = { active: 1, items: [] }) {
     <div class="field"><label>Название *</label><input name="name" required value="${esc(p.name || '')}" placeholder="Например: Сигнализация StarLine S96 под ключ"></div>
     <div class="field"><label>Описание (для себя и для клиента)</label><input name="description" value="${esc(p.description || '')}" placeholder="Что входит, для каких машин"></div>
     <div class="field"><label>Состав</label><div class="tblwrap"><table class="tbl"><thead><tr><th>Позиция</th><th style="width:80px">Кол-во</th><th style="width:130px">Цена, ₽</th><th class="r" style="width:110px">Сумма</th><th style="width:36px"></th></tr></thead><tbody id="pkI"></tbody></table></div>
-      <div class="row" style="margin-top:8px"><div class="field"><input id="pkSvc" placeholder="+ Работа из прайса"></div><div class="field"><input id="pkPrd" placeholder="+ Товар со склада"></div></div>
+      <div class="row" style="margin-top:8px"><div class="field"><input id="pkSvc" placeholder="+ Работа из прайса"></div><div class="field"><input id="pkPrd" placeholder="+ Товар из каталога"></div></div>
       <div class="small muted">Цена пустая — берётся текущая цена из прайса или склада. Укажите свою, если в комплексе цена особая (например, со скидкой).</div></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px"><label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${p.active ? 'checked' : ''}> Показывать в заказах</label><b>Итого: <span id="pkT" class="mono"></span></b></div>`,
   { wide: true, footer: `${p.id ? '<button type="button" class="ghost danger" data-del style="margin-right:auto">Удалить</button>' : ''}<button type="button" data-x>Отмена</button><button class="primary">Сохранить</button>`,
@@ -1297,7 +1266,7 @@ async function packageModal(p = { active: 1, items: [] }) {
     onPick: (s) => { items.push({ kind: 'service', ref_id: s.id, name: s.name, qty: 1, price: '', base: s.price }); $('#pkSvc', f).value = ''; draw(); } });
   autocomplete($('#pkPrd', f), {
     search: (q) => GET('/api/products' + qs({ q })).then((r) => r.slice(0, 15)),
-    render: (x) => `<div>${esc(x.name)}</div><div class="s">${rub(x.price)} · остаток ${x.stock ?? 0}</div>`,
+    render: (x) => `<div>${esc(x.name)}</div><div class="s">${rub(x.price)}${S.me.stock_on ? ' · остаток ' + (x.stock ?? 0) : ''}</div>`,
     onPick: (x) => { items.push({ kind: 'product', ref_id: x.id, name: x.name, qty: 1, price: '', base: x.price }); $('#pkPrd', f).value = ''; draw(); } });
   const del = $('[data-del]', f);
   if (del) del.onclick = async () => { if (!(await confirmBox(`Удалить комплекс «${p.name}»? В уже созданных заказах позиции останутся.`, 'Удалить'))) return; await DEL('/api/packages/' + p.id); m.close(); toast('Комплекс удалён'); navigate(); };
@@ -1422,6 +1391,45 @@ route(/^\/contractors$/, async (page) => {
   await load();
 });
 
+// Операция с контрагентом. Начисление — из прайса (работы/товары) и своими строками, сумма считается сама; оплата — просто сумма.
+function opModal(c, t, title) {
+  const isPay = t.startsWith('pay'); const lines = [];
+  const m = modal(title, `
+    ${isPay ? '' : `<div class="field"><label>Позиции — из прайса или свои</label><input id="opq" placeholder="Начните вводить работу или товар из прайса, или своё название…"></div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>Позиция</th><th style="width:90px">Кол-во</th><th style="width:120px">Цена, ₽</th><th class="r">Сумма</th><th></th></tr></thead><tbody id="opl"></tbody></table></div>`}
+    <div class="row"><div class="field"><label>Сумма, ₽${isPay ? '' : ' <span class="muted small">(если позиций нет)</span>'}</label><input type="number" name="amount" step="any" min="0.01" ${isPay ? 'required' : ''}></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
+    ${isPay ? `<div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div>` : ''}</div>
+    <div class="field"><label>Основание / комментарий</label><input name="note" placeholder="${t === 'we_owe' ? 'Накладная №…' : 'Счёт №…'}"></div>`,
+  { wide: !isPay, onSubmit: async (d) => {
+    const items = lines.filter((l) => l.name.trim());
+    if (!items.length && !(+d.amount > 0)) { toast(isPay ? 'Укажите сумму' : 'Добавьте позиции или укажите сумму', true); return false; }
+    await POST(`/api/contractors/${c.id}/op`, { ...d, type: t, items }); CACHE_CONTR = null; toast('Проведено'); navigate();
+  } });
+  if (isPay) return;
+  const f = m.form; const body = $('#opl', f);
+  const draw = () => {
+    body.innerHTML = lines.length ? lines.map((l, n) => `<tr><td>${l.kind === 'custom' ? `<input data-n="${n}" data-k="name" value="${esc(l.name)}">` : `${l.kind === 'product' ? '📦' : '🔧'} ${esc(l.name)}`}</td>
+      <td><input type="number" step="any" min="0" data-n="${n}" data-k="qty" value="${l.qty}"></td><td><input type="number" step="any" min="0" data-n="${n}" data-k="price" value="${l.price}"></td>
+      <td class="r mono">${num(l.qty * l.price)}</td><td><button type="button" class="ghost sm danger" data-rm="${n}">✕</button></td></tr>`).join('')
+      + `<tr><td colspan="3" class="r"><b>Итого</b></td><td class="r mono"><b>${num(lines.reduce((a, l) => a + l.qty * l.price, 0))}</b></td><td></td></tr>` : '<tr><td colspan="5" class="muted">Позиций нет — можно просто указать сумму ниже</td></tr>';
+    f.amount.disabled = !!lines.length;
+  };
+  body.addEventListener('change', (e) => { const x = e.target; if (x.dataset.n === undefined) return; const l = lines[+x.dataset.n]; l[x.dataset.k] = x.dataset.k === 'name' ? x.value : +x.value || 0; draw(); });
+  body.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) { lines.splice(+b.dataset.rm, 1); draw(); } });
+  let svc = null;
+  $('#opq', f).addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); }); // Enter в поиске не проводит операцию
+  autocomplete($('#opq', f), {
+    search: async (q) => { svc = svc || await GET('/api/services'); const lq = q.toLowerCase();
+      const pr = await GET('/api/products' + qs({ q })).catch(() => []);
+      return [...svc.filter((x) => x.active && x.name.toLowerCase().includes(lq)).slice(0, 8).map((x) => ({ ...x, kind: 'service' })), ...pr.slice(0, 8).map((x) => ({ ...x, kind: 'product' })), { kind: 'custom', name: q }]; },
+    render: (x) => x.kind === 'custom' ? `+ Своя позиция: <b>${esc(x.name)}</b>` : `<div>${x.kind === 'product' ? '📦' : '🔧'} ${esc(x.name)}</div><div class="s">${rub(x.price)}${x.kind === 'product' && x.cost ? ' · закупка ' + rub(x.cost) : ''}</div>`,
+    onPick: (x) => {
+      const price = x.kind === 'custom' ? 0 : t === 'we_owe' && x.kind === 'product' && x.cost ? x.cost : x.price;
+      lines.push({ kind: x.kind, ref_id: x.id || null, name: x.name, qty: 1, price: price || 0 }); $('#opq', f).value = ''; draw();
+    } });
+  draw();
+}
+
 route(/^\/contractors\/(\d+)$/, async (page, id) => {
   const c = await GET('/api/contractors/' + id);
   let bal = 0;
@@ -1437,31 +1445,24 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
       <button class="sm" data-op="we_owe">+ Получили товар/услугу</button><button class="sm" data-op="they_owe">+ Начислить им</button>
       <button class="sm" data-op="pay_out">Оплатить им</button><button class="sm primary" data-op="pay_in">Получить оплату</button></div>
       ${ledger.length ? `<div class="tblwrap"><table class="tbl resp"><thead><tr><th>Дата</th><th>Операция</th><th class="r">Нам должны</th><th class="r">Мы должны</th><th class="r">Сальдо</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-      ${ledger.map((x) => `<tr><td data-l="Дата" class="nowrap">${dmy(x.d)}</td><td data-l="Операция">${x.src === 'order' || x.src === 'opay' ? `<a href="#/orders/${x.order_id || x.id}">${esc(x.text)}</a>` : esc(x.text)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ''}</td>
+      ${ledger.map((x) => `<tr><td data-l="Дата" class="nowrap">${dmy(x.d)}</td><td data-l="Операция">${esc(x.text)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ''}</td>
         <td data-l="Нам должны" class="r mono">${x.they ? (x.they > 0 ? '+' : '−') + num(Math.abs(x.they)) : ''}</td><td data-l="Мы должны" class="r mono">${x.we ? (x.we > 0 ? '+' : '−') + num(Math.abs(x.we)) : ''}</td>
         <td data-l="Сальдо" class="r mono" style="color:${x.bal >= 0 ? 'var(--ok)' : 'var(--bad)'}">${num(x.bal)}</td>
         ${isAdmin() ? `<td>${x.src === 'op' ? `<button class="ghost sm danger" data-delop="${x.id}">✕</button>` : x.src === 'pay' ? `<button class="ghost sm danger" data-delpay="${x.id}">✕</button>` : ''}</td>` : ''}</tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Операций пока нет</div>'}</div>
-    ${c.orders.length ? `<div class="card"><h2>Заказ-наряды контрагента</h2><table class="tbl resp"><thead><tr><th>№</th><th>Статус</th><th>Авто</th><th class="r">Сумма</th><th class="r">Оплачено</th></tr></thead><tbody>
-      ${c.orders.map((o) => `<tr class="click" data-o="${o.id}"><td data-l="№"><b>${orderNo(o.id)}</b></td><td data-l="Статус">${stBadge(o.status)}</td><td data-l="Авто">${esc(carStr(o))} <span class="muted small">${esc(o.client || '')}</span></td><td data-l="Сумма" class="r mono">${rub(o.total)}</td><td data-l="Оплачено" class="r mono">${rub(o.paid)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   </div><div>
     <div class="card"><h2>Реквизиты</h2>
       ${c.contact || c.phone ? `<div class="field">${esc(c.contact || '')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</div>` : ''}
       ${c.inn ? `<div class="field">ИНН ${esc(c.inn)}</div>` : ''}
       ${c.requisites ? `<div class="field small" style="white-space:pre-wrap">${esc(c.requisites)}</div>` : ''}
       ${c.notes ? `<div class="small muted" style="white-space:pre-wrap">${esc(c.notes)}</div>` : ''}
-      <div class="small muted" style="margin-top:10px">Заказ-наряд можно привязать к контрагенту в карточке заказа — неоплаченные выданные заказы попадут в его долг. Приход товара от поставщика в долг оформляется на складе.</div></div>
+      <div class="small muted" style="margin-top:10px">Долги и расчёты с контрагентом вносятся только вручную — кнопками в «Взаиморасчётах». Склад и заказ-наряды на них не влияют.</div></div>
   </div></div>`;
   $('#edit', page).onclick = () => contractorModal(c);
   $('#sv', page).onclick = () => modal('Акт сверки', `<div class="row"><div class="field"><label>С</label><input type="date" name="from" value="${today().slice(0, 5)}01-01"></div><div class="field"><label>По</label><input type="date" name="to" value="${today()}"></div></div>`,
     { submit: 'Сформировать', onSubmit: (d) => { window.open(`/print/contractor/${c.id}/sverka?from=${d.from}&to=${d.to}`, '_blank'); } });
   const T = { we_owe: 'Получили товар / услугу (мы должны)', they_owe: 'Начислить контрагенту (он должен нам)', pay_out: 'Оплата контрагенту (расход из кассы)', pay_in: 'Оплата от контрагента (приход в кассу)' };
-  $$('[data-op]', page).forEach((b) => (b.onclick = () => { const t = b.dataset.op; modal(T[t], `
-    <div class="row"><div class="field"><label>Сумма, ₽</label><input type="number" name="amount" step="any" min="0.01" required></div><div class="field"><label>Дата</label><input type="date" name="date" value="${today()}"></div>
-    ${t.startsWith('pay') ? `<div class="field"><label>Способ</label><select name="method">${opts(Object.entries(WALLET), 'transfer')}</select></div>` : ''}</div>
-    <div class="field"><label>Основание / комментарий</label><input name="note" placeholder="${t === 'we_owe' ? 'Накладная №…, печать стоек, ламинация карбона…' : 'Счёт №…'}"></div>`,
-  { onSubmit: async (d) => { await POST(`/api/contractors/${c.id}/op`, { ...d, type: t }); CACHE_CONTR = null; toast('Проведено'); navigate(); } }); }));
-  $$('[data-o]', page).forEach((e) => (e.onclick = () => go('/orders/' + e.dataset.o)));
+  $$('[data-op]', page).forEach((b) => (b.onclick = () => opModal(c, b.dataset.op, T[b.dataset.op])));
   $$('[data-delop]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию?', 'Удалить')) { await DEL('/api/contractor-ops/' + b.dataset.delop); navigate(); } }));
   $$('[data-delpay]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить платёж из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delpay); navigate(); } }));
 });
@@ -1494,7 +1495,7 @@ async function warrantyModal(c = {}, onDone) {
     <div class="field"><label>Клиент</label><input id="wcq" placeholder="Поиск: имя, телефон, госномер" value="${esc(c.client_id ? [c.client_name, c.client_phone].filter(Boolean).join(' · ') : '')}"></div>
     <div class="row"><div class="field"><label>Имя клиента</label><input name="client_name" value="${esc(c.client_name || '')}"></div>
       <div class="field"><label>Телефон</label><input name="client_phone" value="${esc(c.client_phone || '')}"></div></div>
-    <div class="field"><label>Товар *</label><input name="product_name" id="wpq" required value="${esc(c.product_name || '')}" placeholder="Начните вводить — подскажем со склада"></div>
+    <div class="field"><label>Товар *</label><input name="product_name" id="wpq" required value="${esc(c.product_name || '')}" placeholder="Начните вводить — подскажем из каталога"></div>
     <div class="row"><div class="field"><label>Серийный номер</label><input name="serial" value="${esc(c.serial || '')}"></div>
       <div class="field"><label>Кол-во</label><input type="number" name="qty" min="1" step="any" value="${esc(c.qty || 1)}"></div>
       <div class="field"><label>Дата продажи / установки</label><input type="date" name="sale_date" value="${esc(c.sale_date || '')}"></div></div>
@@ -1701,8 +1702,8 @@ route(/^\/finance$/, async (page, query) => {
   <div class="grid g4" style="margin-bottom:14px">
     <a class="kpi" href="#/contractors" style="color:inherit;text-decoration:none"><div class="l">Долг перед контрагентами</div><div class="v bad">${rub(r.contractors.we_owe)}</div></a>
     <a class="kpi" href="#/contractors" style="color:inherit;text-decoration:none"><div class="l">Контрагенты должны нам</div><div class="v ok">${rub(r.contractors.they_owe)}</div></a>
-    <div class="kpi"><div class="l">Склад по закупке</div><div class="v">${rub(r.stockValue.cost)}</div></div>
-    <div class="kpi"><div class="l">Склад по рознице</div><div class="v">${rub(r.stockValue.retail)}</div></div></div>
+    ${S.me.stock_on ? `<div class="kpi"><div class="l">Склад по закупке</div><div class="v">${rub(r.stockValue.cost)}</div></div>
+    <div class="kpi"><div class="l">Склад по рознице</div><div class="v">${rub(r.stockValue.retail)}</div></div>` : ''}</div>
   <div class="grid g-main"><div>
     <div class="card"><h2>Движение денег по дням</h2>${r.daily.length ? `<div class="bars">${r.daily.map((d) => `<div class="b" data-t="${dmy(d.d)}\nприход ${rub(d.inc)}\nрасход ${rub(d.exp)}"><i class="in" style="height:${d.inc / maxDay * 130}px"></i><i class="out" style="height:${d.exp / maxDay * 130}px"></i></div>`).join('')}</div>
       <div class="legend"><span><i style="background:var(--accent)"></i>Приход</span><span><i style="background:#4a5160"></i>Расход</span></div>` : '<div class="empty">Нет движения денег</div>'}</div>
@@ -1718,7 +1719,7 @@ route(/^\/finance$/, async (page, query) => {
       <div><span class="muted">Товары</span><span class="mono">${rub(s.goods)}</span></div><div><span class="muted">Себестоимость товаров</span><span class="mono">${rub(s.goods_cost)}</span></div>
       <div><span class="muted">Наценка на товарах</span><span class="mono">${rub(goodsMargin)}</span></div>
       <div class="big"><span>Валовая прибыль</span><span class="mono">${rub(s.services + goodsMargin)}</span></div></div>
-      <div class="small muted" style="margin-top:6px">Без учёта зарплаты и расходов. Склад: ${rub(r.stockValue.cost)} по закупке.</div></div>
+      <div class="small muted" style="margin-top:6px">Без учёта зарплаты и расходов.${S.me.stock_on ? ` Склад: ${rub(r.stockValue.cost)} по закупке.` : ''}</div></div>
     <div class="card"><h2>По способам оплаты</h2>${byM('in').map(([t, v]) => `<div class="li"><div class="grow">${t}</div><span class="mono">${rub(v)}</span></div>`).join('')}</div>
     <div class="card"><h2>Статьи расходов</h2>${catList('out').map((x) => `<div style="margin-bottom:8px"><div class="inline" style="justify-content:space-between"><span>${esc(x.category)}</span><span class="mono">${rub(x.s)}</span></div><div class="meter"><i style="width:${x.s / maxCat * 100}%;background:#6b7385"></i></div></div>`).join('') || '<div class="muted">Нет расходов</div>'}</div>
     <div class="card"><h2>Топ услуг</h2>${r.topServices.map((x) => `<div class="li"><div class="grow"><div class="t" style="font-weight:500">${esc(x.name)}</div><div class="s">${num(x.n)} раз</div></div><span class="mono">${rub(x.s)}</span></div>`).join('') || '<div class="muted">Нет данных</div>'}</div>
@@ -2558,7 +2559,7 @@ route(/^\/users$/, async (page) => {
     ${rows.map((u) => `<tr class="click" data-id="${u.id}" style="${u.active ? '' : 'opacity:.45'}"><td data-l="Имя"><b>${esc(u.name)}</b>${u.active ? '' : ' <span class="badge">отключён</span>'}</td><td data-l="Логин" class="muted">${esc(u.login)}</td><td data-l="Роль">${ROLES[u.role]}</td>
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, склад, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Может добавлять фото в заказ. Статусы, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
+    <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Может добавлять фото в заказ. Статусы, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
     <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
@@ -2737,6 +2738,7 @@ route(/^\/settings$/, async (page, query = {}) => {
       <div class="small muted">Соцсети показываются на сайте (контакты и подвал) и в «Маркетинге».</div></div>
     <div class="card"><h2>Запись</h2>
       <div class="field"><label>Посты (через запятую)</label><input name="bays" value="${esc(s.bays)}"></div>
+      <div class="field"><label>Склад (остатки, приход, резервы)</label><select name="stock_on"><option value="0" ${s.stock_on !== '1' ? 'selected' : ''}>Скрыт — товары только как каталог цен, без остатков</option><option value="1" ${s.stock_on === '1' ? 'selected' : ''}>Включён</option></select></div>
       <div class="field"><label>Сайт ателье на главной странице</label><select name="landing_on"><option value="1" ${s.landing_on !== '0' ? 'selected' : ''}>Включён — по адресу сервера открывается сайт, CRM — по кнопке «Вход» (/crm)</option><option value="0" ${s.landing_on === '0' ? 'selected' : ''}>Выключен — сразу открывается CRM</option></select></div>
       <div class="field"><label>Наценка при безналичной оплате, %</label><input type="number" name="cashless_markup" min="0" max="50" step="any" value="${esc(s.cashless_markup)}"></div>
       <div class="field"><label>Эквайринг (комиссия банка с оплат через терминал), %</label><input type="number" name="acquiring_percent" min="0" max="10" step="any" value="${esc(s.acquiring_percent ?? '2')}"><div class="small muted">Не добавляется к сумме клиента — автоматически проводится нашим расходом «Эквайринг» с расчётного счёта. Переводы на карту — без эквайринга.</div></div>
