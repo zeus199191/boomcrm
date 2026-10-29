@@ -2038,6 +2038,12 @@ async function mkPubs(box, query) {
     <div class="card"><h2>${draft ? 'Публикация (черновик)' : 'Новая публикация'}</h2>
       <div class="field"><label>Работа из заказ-наряда (подскажет текст и фото)</label><select id="pbO"><option value="">— без заказа —</option>${orders.map((o) => `<option value="${o.id}" ${String(o.id) === String(cur.order_id) ? 'selected' : ''}>${orderNo(o.id)} · ${esc([o.brand, o.model, o.year].filter(Boolean).join(' ') || 'авто')} · ${dmy(o.date)}${o.photos ? ' · фото ' + o.photos : ''}${o.used ? ' · ✓ уже публиковали' : ''}</option>`).join('')}</select></div>
       <div id="pbSug"></div>
+      <div class="field" style="padding:10px;border-radius:10px;background:rgba(139,92,246,.08)"><label>✨ ИИ-текст ${st.ai ? `<span class="muted small">(${st.ai === 'yandex' ? 'YandexGPT' : 'GigaChat'})</span>` : ''}</label>
+        ${st.ai ? `<div class="row"><div class="field" style="margin:0"><select id="aiS">${opts([['detail', 'Подробно'], ['short', 'Коротко'], ['sell', 'Продающий'], ['expert', 'Экспертный'], ['fun', 'С юмором']], 'detail')}</select></div>
+          <div class="field" style="margin:0;flex:2"><input id="aiW" placeholder="Пожелание (необязательно): упомяни зиму, сделай акцент на тишине…"></div></div>
+          <div class="inline" style="margin-top:6px;gap:6px;flex-wrap:wrap"><button type="button" class="sm" id="aiGen">✨ Написать по заказу</button><button type="button" class="sm" id="aiImp">✨ Улучшить мой текст</button><span class="small muted" id="aiSt"></span></div>
+          <div class="small muted" style="margin-top:4px">ИИ пишет только по фактам из заказа. Перед публикацией прочитайте текст.</div>`
+          : `<div class="small muted">ИИ не подключён. ${S.me.perms?.marketing ? 'Подключите GigaChat или YandexGPT в карточке «Подключения» справа.' : 'Попросите руководителя подключить его в Маркетинге.'}</div>`}</div>
       <div class="field"><label>Заголовок (для сайта)</label><input id="pbT" value="${esc(draft?.title || '')}" placeholder="Toyota Camry — сигнализация с автозапуском"></div>
       <div class="field"><label>Текст поста</label><textarea id="pbX" rows="10" placeholder="Выберите работу выше — CRM предложит текст по заказ-наряду">${esc(draft?.text || '')}</textarea><div class="small muted" id="pbCnt"></div></div>
       <div class="field"><label>Фото и видео * <span class="muted small">(без них пост не публикуется; первое — обложка)</span></label><div class="photos" id="pbM"></div>
@@ -2053,7 +2059,16 @@ async function mkPubs(box, query) {
         <div class="row"><div class="field"><label>Telegram-канал</label><input id="pbTg" value="${esc(st.tg_post_chat)}" placeholder="@bscaraudio38"></div></div>
         <div class="row"><div class="field"><label>ID группы ВКонтакте</label><input id="pbVg" value="${esc(st.vk_group_id)}" placeholder="bscaraudio38 или 123456"></div>
           <div class="field"><label>Ключ доступа ВКонтакте ${st.vk_token ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="pbVt" type="password" autocomplete="new-password" placeholder="${st.vk_token ? '•••••• (не менять)' : 'vk1.a.…'}"></div></div>
-        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>`}
+        <h3 style="margin:14px 0 6px">ИИ для текстов</h3>
+        <div class="small muted" style="margin-bottom:8px"><b>GigaChat</b> (Сбер): developers.sber.ru → GigaChat API → «Ключ авторизации». Для физлица есть бесплатный объём, для ИП/ООО — пакеты.<br>
+        <b>YandexGPT</b>: Yandex Cloud → сервисный аккаунт с ролью <i>ai.languageModels.user</i> → API-ключ, плюс ID каталога. Оплата за объём текста.</div>
+        <div class="field"><label>Сервис</label><select id="aiP">${opts([['', '— не подключён —'], ['gigachat', 'GigaChat (Сбер)'], ['yandex', 'YandexGPT (Яндекс)']], st.ai_provider)}</select></div>
+        <div id="aiG" class="row"><div class="field"><label>Ключ авторизации GigaChat ${st.gigachat_key ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="aiGk" type="password" autocomplete="new-password" placeholder="${st.gigachat_key ? '•••••• (не менять)' : 'MDE5…=='}"></div>
+          <div class="field"><label>Тип доступа</label><select id="aiGs">${opts([['GIGACHAT_API_PERS', 'Физлицо (PERS)'], ['GIGACHAT_API_B2B', 'ИП/ООО, пакеты (B2B)'], ['GIGACHAT_API_CORP', 'ИП/ООО, по факту (CORP)']], st.gigachat_scope)}</select></div></div>
+        <div id="aiY"><div class="row"><div class="field"><label>API-ключ Yandex ${st.yandex_key ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="aiYk" type="password" autocomplete="new-password" placeholder="${st.yandex_key ? '•••••• (не менять)' : 'AQVN…'}"></div>
+          <div class="field"><label>ID каталога</label><input id="aiYf" value="${esc(st.yandex_folder)}" placeholder="b1g…"></div></div>
+          <div class="field"><label>Модель</label><input id="aiYm" value="${esc(st.yandex_model)}" placeholder="yandexgpt/latest"></div></div>
+        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="aiTest">Проверить ИИ</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>`}
       <div class="card"><h2>Публикации</h2>${list.length ? list.map((p) => `<div class="li" style="align-items:flex-start;gap:10px">
         ${p.media[0] ? (p.media[0].kind === 'video' ? `<video src="/api/pubs/${p.id}/media/${p.media[0].id}#t=0.5" muted preload="metadata" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"></video>` : `<img src="/api/pubs/${p.id}/media/${p.media[0].id}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none" alt="">`) : '<div style="width:64px;height:64px;border-radius:8px;background:var(--line);flex:none"></div>'}
         <div class="grow"><div class="t">${esc(p.title || (p.text || '').slice(0, 60) || 'Без текста')}</div>
@@ -2122,7 +2137,20 @@ async function mkPubs(box, query) {
     btn.disabled = false; btn.textContent = '🚀 Опубликовать';
   };
   const dd = $('#pbDel', box); if (dd) dd.onclick = async () => { if (await confirmBox('Удалить черновик?', 'Удалить')) { await DEL('/api/pubs/' + cur.id); go(pubBase()); } };
-  if ($('#pbSave', box)) $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
+  const aiP = $('#aiP', box); if (aiP) { const sw = () => { $('#aiG', box).style.display = aiP.value === 'gigachat' ? '' : 'none'; $('#aiY', box).style.display = aiP.value === 'yandex' ? '' : 'none'; }; aiP.onchange = sw; sw(); }
+  const aiT = $('#aiTest', box); if (aiT) aiT.onclick = async () => { aiT.disabled = true; try { const r = await POST('/api/pubs/ai-test'); toast('ИИ отвечает: ' + r.text.slice(0, 80)); } catch (e) { toast(e.message, true); } aiT.disabled = false; };
+  const aiRun = async (mode) => {
+    const stl = $('#aiSt', box); if (mode === 'improve' && !X.value.trim()) return toast('Сначала напишите или выберите текст', true);
+    if (mode === 'gen' && !cur.order_id) return toast('Выберите заказ-наряд — ИИ возьмёт факты из него', true);
+    $$('#aiGen,#aiImp', box).forEach((b) => (b.disabled = true)); stl.textContent = '⏳ ИИ пишет текст… (10–30 сек)';
+    try { const r = await POST('/api/pubs/ai', { order_id: cur.order_id || null, style: $('#aiS', box).value, wish: $('#aiW', box).value, mode, current: X.value });
+      X.value = r.text; if (r.title && !T.value) T.value = r.title; cnt(); stl.textContent = '✓ Готово — проверьте текст'; }
+    catch (e) { stl.textContent = ''; toast(e.message, true); }
+    $$('#aiGen,#aiImp', box).forEach((b) => (b.disabled = false));
+  };
+  if ($('#aiGen', box)) { $('#aiGen', box).onclick = () => aiRun('gen'); $('#aiImp', box).onclick = () => aiRun('improve'); }
+  if ($('#pbSave', box)) $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value,
+    ai_provider: $('#aiP', box).value, gigachat_key: $('#aiGk', box).value, gigachat_scope: $('#aiGs', box).value, yandex_key: $('#aiYk', box).value, yandex_folder: $('#aiYf', box).value, yandex_model: $('#aiYm', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
   if ($('#pbTtg', box)) $('#pbTtg', box).onclick = async () => { try { const r = await POST('/api/pubs/test/tg'); toast('Telegram: канал «' + (r.name || '') + '» доступен'); } catch (e) { toast(e.message, true); } };
   if ($('#pbTvk', box)) $('#pbTvk', box).onclick = async () => { try { const r = await POST('/api/pubs/test/vk'); toast('ВКонтакте: группа «' + (r.name || '') + '» доступна'); } catch (e) { toast(e.message, true); } };
   $$('[data-pbopen]', box).forEach((b) => (b.onclick = () => go(pubBase({ pub: b.dataset.pbopen }))));
