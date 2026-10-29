@@ -1403,11 +1403,12 @@ function opModal(c, t, title, op) {
   { wide: !isPay, onSubmit: async (d) => {
     const items = lines.filter((l) => l.name.trim());
     if (!items.length && !(+d.amount > 0)) { toast(isPay ? 'Укажите сумму' : 'Добавьте позиции или укажите сумму', true); return false; }
-    if (op) await PUT('/api/contractor-ops/' + op.id, { ...d, items }); else await POST(`/api/contractors/${c.id}/op`, { ...d, type: t, items });
+    if (op && op.src === 'pay') await PUT('/api/contractor-pays/' + op.id, d);
+    else if (op) await PUT('/api/contractor-ops/' + op.id, { ...d, items }); else await POST(`/api/contractors/${c.id}/op`, { ...d, type: t, items });
     CACHE_CONTR = null; toast(op ? 'Исправлено' : 'Проведено'); navigate();
   } });
   const f = m.form;
-  if (op) { f.date.value = op.d || today(); f.note.value = op.raw_note || ''; if (!lines.length) f.amount.value = op.amount; }
+  if (op) { f.date.value = op.d || today(); f.note.value = (op.src === 'pay' ? op.note : op.raw_note) || ''; if (!lines.length) f.amount.value = op.amount; if (f.method && op.method) f.method.value = op.method; }
   if (isPay) return;
   const body = $('#opl', f);
   const total = () => lines.reduce((a, l) => a + l.qty * l.price, 0);
@@ -1453,7 +1454,7 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
       <button class="sm" data-op="we_owe">+ Получили товар/услугу</button><button class="sm" data-op="they_owe">+ Начислить им</button>
       <button class="sm" data-op="pay_out">Оплатить им</button><button class="sm primary" data-op="pay_in">Получить оплату</button></div>
       ${ledger.length ? `<div class="tblwrap"><table class="tbl resp"><thead><tr><th>Дата</th><th>Операция</th><th class="r">Нам должны</th><th class="r">Мы должны</th><th class="r">Сальдо</th></tr></thead><tbody>
-      ${ledger.map((x) => `<tr><td data-l="Дата" class="nowrap">${dmy(x.d)}</td><td data-l="Операция"><div>${esc(x.text)}${x.src === 'op' ? ` <button class="ghost sm" data-edop="${x.id}" title="Исправить">✎</button>${isAdmin() ? `<button class="ghost sm danger" data-delop="${x.id}" title="Удалить">✕</button>` : ''}` : x.src === 'pay' && isAdmin() ? ` <button class="ghost sm danger" data-delpay="${x.id}" title="Удалить">✕</button>` : ''}${x.src === 'op' && x.items?.length ? `${x.raw_note ? ` <span class="muted small">${esc(x.raw_note)}</span>` : ''}
+      ${ledger.map((x) => `<tr><td data-l="Дата" class="nowrap">${dmy(x.d)}</td><td data-l="Операция"><div>${esc(x.text)}${x.src === 'op' ? ` <button class="ghost sm" data-edop="${x.id}" title="Исправить">✎</button>${isAdmin() ? `<button class="ghost sm danger" data-delop="${x.id}" title="Удалить">✕</button>` : ''}` : x.src === 'pay' ? ` <button class="ghost sm" data-edpay="${x.id}" title="Исправить">✎</button>${isAdmin() ? `<button class="ghost sm danger" data-delpay="${x.id}" title="Удалить">✕</button>` : ''}` : ''}${x.src === 'op' && x.items?.length ? `${x.raw_note ? ` <span class="muted small">${esc(x.raw_note)}</span>` : ''}
           <table class="opitems"><tbody>${x.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="r mono">${num(i.qty)} × ${num(i.price)}</td><td class="r mono">${num(i.qty * i.price)}</td></tr>`).join('')}</tbody></table>`
           : x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ''}</div></td>
         <td data-l="Нам должны" class="r mono">${x.they ? (x.they > 0 ? '+' : '−') + num(Math.abs(x.they)) : ''}</td><td data-l="Мы должны" class="r mono">${x.we ? (x.we > 0 ? '+' : '−') + num(Math.abs(x.we)) : ''}</td>
@@ -1474,6 +1475,7 @@ route(/^\/contractors\/(\d+)$/, async (page, id) => {
   const T = { we_owe: 'Получили товар / услугу (мы должны)', they_owe: 'Начислить контрагенту (он должен нам)', pay_out: 'Оплата контрагенту (расход из кассы)', pay_in: 'Оплата от контрагента (приход в кассу)' };
   $$('[data-op]', page).forEach((b) => (b.onclick = () => opModal(c, b.dataset.op, T[b.dataset.op])));
   $$('[data-edop]', page).forEach((b) => (b.onclick = () => { const x = c.ledger.find((r) => r.src === 'op' && r.id === +b.dataset.edop); opModal(c, x.kind, T[x.kind], x); }));
+  $$('[data-edpay]', page).forEach((b) => (b.onclick = () => { const x = c.ledger.find((r) => r.src === 'pay' && r.id === +b.dataset.edpay); const t = x.direction === 'in' ? 'pay_in' : 'pay_out'; opModal(c, t, T[t], x); }));
   $$('[data-delop]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить операцию?', 'Удалить')) { await DEL('/api/contractor-ops/' + b.dataset.delop); navigate(); } }));
   $$('[data-delpay]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить платёж из кассы?', 'Удалить')) { await DEL('/api/payments/' + b.dataset.delpay); navigate(); } }));
 });
