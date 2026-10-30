@@ -118,6 +118,8 @@ ExecStart=/usr/bin/node --max-old-space-size=256 server.js
 Restart=always
 RestartSec=3
 MemoryMax=450M
+# при переполнении памяти — быстрый перезапуск CRM, а не уход в swap (сервер «замирал» целиком)
+MemorySwapMax=64M
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
