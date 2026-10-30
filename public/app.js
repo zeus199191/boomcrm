@@ -2061,7 +2061,7 @@ async function mkPubs(box, query) {
       <div class="field"><label>Заголовок (для сайта)</label><input id="pbT" value="${esc(draft?.title || '')}" placeholder="Toyota Camry — сигнализация с автозапуском"></div>
       <div class="field"><label>Текст поста</label><textarea id="pbX" rows="10" placeholder="Выберите работу выше — CRM предложит текст по заказ-наряду">${esc(draft?.text || '')}</textarea><div class="small muted" id="pbCnt"></div></div>
       <div class="field"><label>Фото и видео * <span class="muted small">(без них пост не публикуется; первое — обложка)</span></label><div class="photos" id="pbM"></div>
-        <label class="btn sm" style="cursor:pointer;margin-top:6px">📷 Добавить фото / видео<input type="file" accept="image/*,video/*" multiple hidden id="pbF"></label> <span class="small muted" id="pbUp"></span></div>
+        <label class="btn sm" style="cursor:pointer;margin-top:6px">📷 Добавить фото<input type="file" accept="image/*" multiple hidden id="pbF"></label> <span class="small muted" id="pbUp"></span></div>
       <div class="field"><label>Куда публиковать</label>${PUB_CH.map(([k, n]) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;color:var(--text);${chOn[k] ? '' : 'opacity:.55'}"><input type="checkbox" data-ch="${k}" ${!chOn[k] ? 'disabled' : draft?.results?.[k]?.ok ? '' : 'checked'} style="width:16px;height:16px;flex:none;margin-top:2px"><span><b>${n}</b> <span class="small muted">— ${esc(chNote[k])}</span></span></label>`).join('')}</div>
       <div class="inline"><button class="primary" id="pbGo">🚀 Опубликовать</button>${cur.id ? '<button type="button" class="ghost danger" id="pbDel">Удалить черновик</button>' : ''}</div>
       <div id="pbRes" style="margin-top:10px"></div></div>
@@ -2126,8 +2126,7 @@ async function mkPubs(box, query) {
       try {
         let blob = f;
         if (f.type.startsWith('image/')) { const d = await shrinkImage(f, 2000, 0.86); blob = await (await fetch(d)).blob(); }
-        else if (!f.type.startsWith('video/')) throw new Error('Можно только фото или видео');
-        else if (f.size > 50 * 1024 * 1024) throw new Error('видео больше 50 МБ — сожмите или обрежьте');
+        else throw new Error('можно загрузить только фото (видео пока отключено)');
         await uploadRaw(`/api/pubs/${cur.id}/media`, blob, (pc) => { up.textContent = `Загрузка ${n + 1} из ${files.length}: ${pc}%`; });
       } catch (err) { toast(`${f.name}: ${err.message}`, true); }
     }
@@ -2135,7 +2134,7 @@ async function mkPubs(box, query) {
   };
   $('#pbGo', box).onclick = async () => {
     const chs = $$('[data-ch]:checked', box).map((c) => c.dataset.ch);
-    if (!cur.media.length) return toast('Добавьте хотя бы одно фото или видео — без них пост не публикуется', true);
+    if (!cur.media.length) return toast('Добавьте хотя бы одно фото — без него пост не публикуется', true);
     if (!X.value.trim()) return toast('Напишите текст поста', true);
     if (!chs.length) return toast('Отметьте, куда публиковать', true);
     if (!(await confirmBox(`Опубликовать пост: ${chs.map((k) => PUB_CH.find((x) => x[0] === k)[1]).join(', ')}?`, 'Опубликовать'))) return;
