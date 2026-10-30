@@ -3,6 +3,7 @@
 const http = require('node:http');
 const path = require('node:path');
 const { readBody, parseCookies, send, serveStatic, HttpError } = require('./lib/http');
+const watchdog = require('./lib/watchdog');
 // Часовой пояс студии — Иркутск (влияет на даты в базе, сводки и печать)
 process.env.TZ = process.env.CRM_TZ || 'Asia/Irkutsk';
 const { get } = require('./lib/db');
@@ -32,12 +33,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const pathname = url.pathname;
   const isPublic = pathname.startsWith('/api/public/');
+  const wd = watchdog.track(req, pathname); res.on('close', wd.end);
   try {
     if (isPublic) for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
     if (req.method === 'OPTIONS') return send(res, 204, '');
 
     const cookies = parseCookies(req);
     const user = auth.userFromToken(cookies.sid);
+    if (user) wd.set('u', user.name);
     if (user && user.renewed) res.setHeader('Set-Cookie', `sid=${cookies.sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${auth.SESSION_DAYS * 86400}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
 
     // Печатные формы
@@ -82,6 +85,10 @@ const server = http.createServer(async (req, res) => {
       }
       const ctx = { req, res, user, token: cookies.sid, params: m.params, query: Object.fromEntries(url.searchParams), body: {} };
       if (req.method !== 'GET' && !/^\/api\/pubs\/\d+\/media$/.test(pathname)) ctx.body = await readBody(req, pathname === '/api/products/import-price' || pathname === '/api/clients/import' || pathname === '/api/bank/upload' || /^\/api\/orders\/\d+\/photos$/.test(pathname) ? 15 * 1024 * 1024 : undefined);
+      if (req.method !== 'GET' && ctx.body && typeof ctx.body === 'object') { // кратко, что отправили (без паролей и файлов)
+        const brief = JSON.stringify(ctx.body, (k, v) => (/pass|token|key|file|data|photo|image/i.test(k) ? undefined : typeof v === 'string' && v.length > 60 ? v.slice(0, 60) + '…' : v));
+        if (brief && brief !== '{}') wd.set('b', brief.slice(0, 300));
+      }
       let result;
       for (const fn of fns) { result = await fn(ctx); }
       if (result !== undefined) send(res, 200, result);
@@ -112,13 +119,14 @@ const server = http.createServer(async (req, res) => {
     let status = e.status || 500;
     let msg = e.message;
     if (status === 500 && String(e.message).includes('FOREIGN KEY')) { status = 400; msg = 'Связанная запись не найдена или используется'; }
-    else if (status === 500) { console.error(new Date().toISOString(), req.method, pathname, e); msg = 'Внутренняя ошибка сервера'; }
+    else if (status === 500) { console.error(new Date().toISOString(), req.method, pathname, e); watchdog.log(`Ошибка 500: ${wd.e.u || 'гость'} · ${wd.e.d} · ${req.method} ${pathname}: ${String(e && e.message).slice(0, 200)}`); msg = 'Внутренняя ошибка сервера'; }
     send(res, status, { error: msg });
   }
 });
 
 server.listen(PORT, HOST, () => {
   console.log(`CRM запущена: http://${HOST}:${PORT}`);
+  watchdog.start();
   require('./lib/notify').start(botHandlers);
   require('./lib/warranty').start();
   require('./lib/bank').start();

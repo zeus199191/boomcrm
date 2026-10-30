@@ -2811,6 +2811,9 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   </div><div style="margin-top:14px"><button class="primary">Сохранить настройки</button></div></form>
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
+    <div class="card" id="diagCard"><div class="inline" style="margin-bottom:8px"><h2 style="margin:0;flex:1">Диагностика</h2><button type="button" class="sm" id="diagR">Обновить</button><button type="button" class="sm ghost" id="diagC">Очистить</button></div>
+      <div class="small muted" style="margin-bottom:8px">Если сервер перестаёт отвечать дольше 20 секунд, CRM сама перезапускается и записывает сюда, кто и что делал в этот момент (сотрудник, устройство, действие). Также — долгие запросы и ошибки сервера. Новые записи сверху.</div>
+      <pre id="diagT" style="white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;margin:0">Загрузка…</pre></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="smsCard"><h2>SMS-рассылка</h2><div class="muted">Загрузка…</div></div>
@@ -2831,6 +2834,10 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     e.target.value = '';
   };
   loadUpdateCard(page);
+  const diagLoad = async () => { try { const d = await GET('/api/admin/diag'); $('#diagT', page).textContent = d.text || 'Записей нет — всё работает без сбоев.'; } catch (e) { $('#diagT', page).textContent = e.message; } };
+  $('#diagR', page).onclick = diagLoad;
+  $('#diagC', page).onclick = async () => { if (await confirmBox('Очистить журнал диагностики?', 'Очистить')) { await DEL('/api/admin/diag'); diagLoad(); } };
+  diagLoad();
   loadAlfaCard(page, query);
   loadSabyCard(page);
   loadSmsCard(page);
