@@ -114,12 +114,12 @@ Environment=CRM_DATA=$DATA_DIR
 Environment=TZ=$TZ_NAME
 Environment=CRM_TZ=$TZ_NAME
 Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-ExecStart=/usr/bin/node --max-old-space-size=256 server.js
+ExecStart=/usr/bin/node --max-old-space-size=768 server.js
 Restart=always
 RestartSec=3
-MemoryMax=450M
+MemoryMax=1536M
 # при переполнении памяти — быстрый перезапуск CRM, а не уход в swap (сервер «замирал» целиком)
-MemorySwapMax=64M
+MemorySwapMax=128M
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
