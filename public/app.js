@@ -2860,7 +2860,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
       const d = await GET('/api/admin/diag');
       $('#diagS', page).textContent = d.info || '';
       $('#diagT', page).textContent = d.text || 'Записей нет — всё работает без сбоев.';
-      const sys = [d.journal && '— Журнал CRM и nginx —\n' + d.journal, d.nginx && '— Ошибки nginx —\n' + d.nginx, d.kernel && '— Ядро системы (предупреждения) —\n' + d.kernel].filter(Boolean).join('\n\n');
+      const sys = [d.journal && '— Журнал CRM и nginx —\n' + d.journal, d.nginx && '— Ошибки nginx —\n' + d.nginx, d.kernel && '— Ядро системы (предупреждения) —\n' + d.kernel, d.prevBoot && '— Перед последней перезагрузкой сервера (последние 150 строк) —\n' + d.prevBoot].filter(Boolean).join('\n\n');
       $('#diagJ', page).textContent = sys || 'Системные журналы пока недоступны CRM (появятся после обновления).';
     } catch (e) { $('#diagT', page).textContent = e.message; }
   };
