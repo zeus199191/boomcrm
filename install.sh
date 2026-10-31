@@ -136,18 +136,18 @@ systemctl enable boomcrm >/dev/null 2>&1
 systemctl restart boomcrm
 
 # --- nginx ---
+# Если сертификат для домена уже есть — сразу пишем конфиг с HTTPS. Раньше при каждом обновлении конфиг
+# перезаписывался «только HTTP», и сайт/CRM были недоступны по https, пока certbot заново не вписывал SSL (минуты).
 SERVER_NAME="${DOMAIN:-_}"
 if [ -n "$DOMAIN" ]; then LISTEN="80"; else LISTEN="80 default_server"; fi
-cat > /etc/nginx/sites-available/boomcrm <<EOF
-server {
-    listen $LISTEN;
-    server_name $SERVER_NAME;
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
+HAVE_CERT=""
+[ -n "$DOMAIN" ] && [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ] && HAVE_CERT=1
+PROXY="
     client_max_body_size 60m;
     server_tokens off;
-
     gzip on;
     gzip_types text/css application/javascript application/json;
-
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
@@ -156,12 +156,41 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 60s;
-    }
+    }"
+NGX=/etc/nginx/sites-available/boomcrm
+cp -f "$NGX" "$NGX.bak" 2>/dev/null || true
+if [ -n "$HAVE_CERT" ]; then
+  SSLOPT=""; [ -f /etc/letsencrypt/options-ssl-nginx.conf ] && SSLOPT="include /etc/letsencrypt/options-ssl-nginx.conf;"
+  DH=""; [ -f /etc/letsencrypt/ssl-dhparams.pem ] && DH="ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;"
+  cat > "$NGX" <<NGXEOF
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/privkey.pem;
+    $SSLOPT
+    $DH
+$PROXY
 }
-EOF
-ln -sf /etc/nginx/sites-available/boomcrm /etc/nginx/sites-enabled/boomcrm
+server {
+    listen 80;
+    server_name $DOMAIN;
+    location / { return 301 https://\$host\$request_uri; }
+}
+NGXEOF
+else
+  cat > "$NGX" <<NGXEOF
+server {
+    listen $LISTEN;
+    server_name $SERVER_NAME;
+$PROXY
+}
+NGXEOF
+fi
+ln -sf "$NGX" /etc/nginx/sites-enabled/boomcrm
 [ -z "$DOMAIN" ] && rm -f /etc/nginx/sites-enabled/default
-nginx -t -q && systemctl reload nginx
+if nginx -t -q 2>/dev/null; then systemctl reload nginx
+else c_err "Новый конфиг nginx с ошибкой — оставляю прежний"; cp -f "$NGX.bak" "$NGX" 2>/dev/null && systemctl reload nginx; fi
 c_ok "nginx настроен"
 
 # --- Firewall ---
@@ -227,10 +256,13 @@ c_ok "Резервная копия базы — каждую ночь, хран
 
 # --- HTTPS ---
 if [ -n "$DOMAIN" ]; then
-  c_inf "Получаю SSL-сертификат для $DOMAIN"
-  apt-get install -y -qq $APTOPT certbot python3-certbot-nginx >/dev/null
+  c_inf "HTTPS для $DOMAIN"
+  command -v certbot >/dev/null || apt-get install -y -qq $APTOPT certbot python3-certbot-nginx >/dev/null
   if [ -n "$EMAIL" ]; then EM="-m $EMAIL"; else EM="--register-unsafely-without-email"; fi
-  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --keep-until-expiring $EM --redirect -q; then
+  if [ -n "$HAVE_CERT" ]; then
+    c_ok "HTTPS уже настроен (сертификат есть, продлевается автоматически)"
+    printf '%s\n%s\n' "$DOMAIN" "$EMAIL" > "$CONF"; chown boomcrm:boomcrm "$CONF"
+  elif certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --keep-until-expiring $EM --redirect -q; then
     c_ok "HTTPS включён, сертификат будет продлеваться автоматически"
     printf '%s\n%s\n' "$DOMAIN" "$EMAIL" > "$CONF"; chown boomcrm:boomcrm "$CONF"
   else
