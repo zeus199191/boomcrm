@@ -119,7 +119,7 @@ const server = http.createServer(async (req, res) => {
     let status = e.status || 500;
     let msg = e.message;
     if (status === 500 && String(e.message).includes('FOREIGN KEY')) { status = 400; msg = 'Связанная запись не найдена или используется'; }
-    else if (status === 500) { console.error(new Date().toISOString(), req.method, pathname, e); watchdog.log(`Ошибка 500: ${wd.e.u || 'гость'} · ${wd.e.d} · ${req.method} ${pathname}: ${String(e && e.message).slice(0, 200)}`); msg = 'Внутренняя ошибка сервера'; }
+    else if (status === 500) { console.error(new Date().toISOString(), req.method, pathname, e); if (String(e && e.message) !== 'aborted') watchdog.log(`Ошибка 500: ${wd.e.u || 'гость'} · ${wd.e.d} · ${req.method} ${pathname}: ${String(e && e.message).slice(0, 200)}`); msg = 'Внутренняя ошибка сервера'; }
     send(res, status, { error: msg });
   }
 });
