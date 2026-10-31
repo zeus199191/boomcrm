@@ -91,6 +91,8 @@ fi
 
 # --- Пользователь и файлы ---
 id boomcrm >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin boomcrm
+# чтение системных журналов для «Настройки → Диагностика» (только чтение)
+usermod -aG systemd-journal,adm boomcrm 2>/dev/null || true
 mkdir -p "$APP_DIR" "$DATA_DIR"
 rsync -a --delete --exclude 'data/' --exclude '.git' --exclude '*.tar.gz' "$SRC_DIR"/ "$APP_DIR"/
 chown -R root:root "$APP_DIR"

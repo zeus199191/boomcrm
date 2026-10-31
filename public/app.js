@@ -53,10 +53,30 @@ function toast(msg, err = false) {
   setTimeout(() => el.remove(), err ? 6000 : 3000);
 }
 
+// Учёт обрывов связи: браузер запоминает, когда запросы к CRM не проходили, и сообщает об этом,
+// как только связь вернётся (Настройки → Диагностика) — так видно, сеть это или сервер.
+const NET = (() => { try { return JSON.parse(localStorage.getItem('netFail')) || null; } catch { return null; } })() || { from: 0, to: 0, count: 0, kinds: {}, url: '' };
+function netFail(kind, url) {
+  const n = Date.now(); if (!NET.from) NET.from = n; NET.to = n; NET.count++; NET.kinds[kind] = (NET.kinds[kind] || 0) + 1; NET.url = url;
+  try { localStorage.setItem('netFail', JSON.stringify(NET)); } catch {}
+}
+function netOk() {
+  if (!NET.from) return;
+  const r = { ...NET, net: (navigator.connection && navigator.connection.effectiveType) || '' };
+  Object.assign(NET, { from: 0, to: 0, count: 0, kinds: {}, url: '' }); try { localStorage.removeItem('netFail'); } catch {}
+  fetch('/api/diag/client', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) }).catch(() => {});
+}
 async function api(method, url, body) {
   const opt = { method, headers: {} };
   if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const res = await fetch(url, opt);
+  // без ответа 60 с — считаем, что связи нет (публикация, ИИ и обновление могут идти долго)
+  const ctl = /publish|\/ai|update|import|receipt|saby/.test(url) ? null : new AbortController();
+  const tm = ctl && setTimeout(() => ctl.abort(), 60000); if (ctl) opt.signal = ctl.signal;
+  let res;
+  try { res = await fetch(url, opt); }
+  catch (e) { netFail(e.name === 'AbortError' ? 'нет ответа 60 с' : 'нет связи', method + ' ' + url); throw new Error(e.name === 'AbortError' ? 'CRM не ответила за 60 секунд — попробуйте ещё раз' : 'Нет связи с CRM — проверьте интернет'); }
+  finally { if (tm) clearTimeout(tm); }
+  if ([502, 503, 504].includes(res.status)) netFail('ошибка ' + res.status, method + ' ' + url); else netOk();
   let data = null;
   try { data = await res.json(); } catch {}
   if (res.status === 401 && url !== '/api/login') { S.me = null; renderLogin(); throw new Error('Требуется вход'); }
@@ -2034,8 +2054,8 @@ function uploadRaw(url, blob, onProgress) {
   return new Promise((ok, no) => {
     const x = new XMLHttpRequest(); x.open('POST', url); x.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
     x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded * 100 / e.total)); };
-    x.onload = () => { let d = null; try { d = JSON.parse(x.responseText); } catch {} x.status < 300 ? ok(d) : no(new Error((d && d.error) || 'Ошибка ' + x.status)); };
-    x.onerror = () => no(new Error('Связь прервалась')); x.send(blob);
+    x.onload = () => { let d = null; try { d = JSON.parse(x.responseText); } catch {} if ([502, 503, 504].includes(x.status)) netFail('ошибка ' + x.status, 'POST ' + url); else netOk(); x.status < 300 ? ok(d) : no(new Error((d && d.error) || 'Ошибка ' + x.status)); };
+    x.onerror = () => { netFail('обрыв загрузки файла', 'POST ' + url); no(new Error('Связь прервалась')); }; x.send(blob);
   });
 }
 const pubBase = (q = {}) => (location.hash.startsWith('#/smm') ? '/smm' + qs(q) : '/marketing' + qs({ tab: 'pubs', ...q }));
@@ -2811,8 +2831,10 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="diagCard"><div class="inline" style="margin-bottom:8px"><h2 style="margin:0;flex:1">Диагностика</h2><button type="button" class="sm" id="diagR">Обновить</button><button type="button" class="sm ghost" id="diagC">Очистить</button></div>
-      <div class="small muted" style="margin-bottom:8px">Если сервер перестаёт отвечать дольше 20 секунд, CRM сама перезапускается и записывает сюда, кто и что делал в этот момент (сотрудник, устройство, действие). Также — долгие запросы и ошибки сервера. Новые записи сверху.</div>
-      <pre id="diagT" style="white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;margin:0">Загрузка…</pre></div>
+      <div class="small muted" style="margin-bottom:8px">Если CRM перестаёт отвечать дольше 20 секунд, она сама перезапускается и записывает сюда, кто и что делал. Сюда же попадают запуски CRM (и сколько она не работала), обрывы связи у сотрудников (браузер сообщает, когда связь вернулась — видно, сеть это или сервер), долгие запросы и ошибки. Новые записи сверху.</div>
+      <pre id="diagS" class="small" style="white-space:pre-wrap;margin:0 0 10px;color:var(--muted)"></pre>
+      <pre id="diagT" style="white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;margin:0">Загрузка…</pre>
+      <details style="margin-top:10px"><summary class="small" style="cursor:pointer">Системные журналы сервера</summary><pre id="diagJ" style="white-space:pre-wrap;font-size:11px;max-height:360px;overflow:auto;margin:6px 0 0"></pre></details></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="smsCard"><h2>SMS-рассылка</h2><div class="muted">Загрузка…</div></div>
@@ -2833,7 +2855,15 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     e.target.value = '';
   };
   loadUpdateCard(page);
-  const diagLoad = async () => { try { const d = await GET('/api/admin/diag'); $('#diagT', page).textContent = d.text || 'Записей нет — всё работает без сбоев.'; } catch (e) { $('#diagT', page).textContent = e.message; } };
+  const diagLoad = async () => {
+    try {
+      const d = await GET('/api/admin/diag');
+      $('#diagS', page).textContent = d.info || '';
+      $('#diagT', page).textContent = d.text || 'Записей нет — всё работает без сбоев.';
+      const sys = [d.journal && '— Журнал CRM и nginx —\n' + d.journal, d.nginx && '— Ошибки nginx —\n' + d.nginx, d.kernel && '— Ядро системы (предупреждения) —\n' + d.kernel].filter(Boolean).join('\n\n');
+      $('#diagJ', page).textContent = sys || 'Системные журналы пока недоступны CRM (появятся после обновления).';
+    } catch (e) { $('#diagT', page).textContent = e.message; }
+  };
   $('#diagR', page).onclick = diagLoad;
   $('#diagC', page).onclick = async () => { if (await confirmBox('Очистить журнал диагностики?', 'Очистить')) { await DEL('/api/admin/diag'); diagLoad(); } };
   diagLoad();
