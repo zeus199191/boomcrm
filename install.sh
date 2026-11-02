@@ -54,7 +54,7 @@ APTOPT="-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o
 systemctl stop unattended-upgrades 2>/dev/null || true
 dpkg --force-confdef --force-confold --configure -a >/dev/null 2>&1 || true
 apt-get update -qq
-apt-get install -y -qq $APTOPT curl ca-certificates gnupg nginx ufw cron rsync >/dev/null
+apt-get install -y -qq $APTOPT curl ca-certificates gnupg nginx ufw cron rsync tcpdump >/dev/null
 
 # --- Node.js 22 LTS (в нём встроен SQLite, внешние модули не нужны) ---
 NODE_MAJOR=0
@@ -200,6 +200,31 @@ ufw --force enable >/dev/null
 c_ok "Firewall: открыты только SSH, HTTP и HTTPS"
 
 # --- Обновление и подключение домена из интерфейса CRM (без консоли) ---
+# Проверка во время сбоя: в консоли сервера набрать  boomcheck  — покажет, где обрыв (CRM, nginx или сеть до сервера)
+cat > /usr/local/bin/boomcheck <<EOF2
+#!/usr/bin/env bash
+PORT=$PORT; DOMAIN="$DOMAIN"; LOG="$DATA_DIR/diag.log"
+EOF2
+cat >> /usr/local/bin/boomcheck <<'EOF2'
+{
+echo "ПРОВЕРКА boomcheck $(date '+%d.%m %H:%M:%S'):"
+c1=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/me")
+if [ -n "$DOMAIN" ]; then c2=$(curl -s -m 5 -o /dev/null -w '%{http_code}' --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/crm")
+else c2=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1/crm"); fi
+est=$(ss -Htn state established '( sport = :443 or sport = :80 )' | wc -l)
+half=$(ss -Htn state syn-recv '( sport = :443 or sport = :80 )' | wc -l)
+echo "    CRM изнутри: $c1 (401 — работает) · nginx изнутри: $c2 (200 — работает) · соединений с посетителями: $est, недоустановленных: $half"
+echo "    Слушаю сеть 20 секунд — откройте сайт с телефона через мобильный интернет…"
+syn=$(timeout 20 tcpdump -ni eth0 -q -l 'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack = 0 and (dst port 443 or dst port 80)' 2>/dev/null | wc -l)
+echo "    Новых подключений к сайту извне за 20 с: $syn"
+if [ "$c1" != "401" ]; then echo "    ВЫВОД: CRM не отвечает — проблема в CRM (пришлите это сообщение)."
+elif [ "$c2" != "200" ] && [ "$c2" != "302" ]; then echo "    ВЫВОД: CRM работает, но nginx не отвечает — проблема в веб-сервере nginx."
+elif [ "$syn" = "0" ]; then echo "    ВЫВОД: сервер, nginx и CRM работают, но подключения извне до сервера НЕ ДОХОДЯТ — проблема сети хостинга (или провайдера по пути). Это сообщение можно отправить в поддержку хостинга."
+else echo "    ВЫВОД: подключения до сервера доходят ($syn шт.) и сервер отвечает изнутри — если сайт при этом не открывается, ответы сервера не доходят обратно: проблема сети хостинга."
+fi
+} | tee -a "$LOG"
+EOF2
+chmod 755 /usr/local/bin/boomcheck
 cat > /usr/local/bin/boomcrm-update <<'EOF2'
 #!/usr/bin/env bash
 REQ=/var/lib/boomcrm/update.request
