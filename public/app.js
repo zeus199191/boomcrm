@@ -1711,6 +1711,7 @@ function statementModal(from, to) {
     <label>Способы оплаты</label>
     <div class="checkgrid" style="margin-bottom:12px">${Object.entries(METHODS).map(([k, t]) => `<label class="ck"><input type="checkbox" name="m" value="${k}" checked> ${t}</label>`).join('')}</div>
     <div class="field"><label>Операции</label><select name="direction"><option value="">Поступления и расходы</option><option value="in">Только поступления</option><option value="out">Только расходы</option></select></div>
+    <label class="ck" style="margin-bottom:10px"><input type="checkbox" name="items"> <span><b>По позициям</b> — под каждой оплатой заказа расписать, что оплачено: работы и товары, кол-во, цены, скидка</span></label>
     <div id="stPrev" class="small muted"></div>`,
   { submit: '📄 Открыть выписку', footer: '<button type="button" data-x>Отмена</button><button type="button" id="stX">⬇ Excel</button><button class="primary">📄 Открыть выписку</button>',
     onSubmit: () => { const q = params(); if (q) window.open('/print/statement' + qs(q), '_blank'); return false; } });
@@ -1719,7 +1720,7 @@ function statementModal(from, to) {
     const ms = $$('input[name=m]:checked', f).map((x) => x.value);
     if (!ms.length) { toast('Отметьте хотя бы один способ оплаты', true); return null; }
     if (f.from.value > f.to.value) { toast('Дата «с» позже даты «по»', true); return null; }
-    return { from: f.from.value, to: f.to.value, methods: ms.length === Object.keys(METHODS).length ? '' : ms.join(','), direction: f.direction.value };
+    return { from: f.from.value, to: f.to.value, methods: ms.length === Object.keys(METHODS).length ? '' : ms.join(','), direction: f.direction.value, items: f.items.checked ? 1 : '' };
   };
   $('#stX', f.closest('.modal') || f).onclick = () => { const q = params(); if (!q) return; const a = document.createElement('a'); a.href = '/api/statement.xlsx' + qs(q); a.click(); };
   $$('[data-pr]', f).forEach((b) => (b.onclick = () => {
