@@ -8,7 +8,7 @@ const watchdog = require('./lib/watchdog');
 process.env.TZ = process.env.CRM_TZ || 'Asia/Irkutsk';
 const { get } = require('./lib/db');
 const auth = require('./lib/auth');
-const { router, loadOrder, contractorLedger, botHandlers } = require('./lib/api');
+const { router, loadOrder, contractorLedger, statement, botHandlers } = require('./lib/api');
 const print = require('./lib/print');
 const tg = require('./lib/telegram');
 
@@ -59,6 +59,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, print.warrantyClaim(require('./lib/warranty').load(+wp[1]), wp[2]), { 'Content-Type': 'text/html; charset=utf-8' });
     }
 
+    // Выписка по операциям за период
+    if (pathname === '/print/statement') {
+      if (!user) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      if (!['admin', 'manager'].includes(user.role)) throw new HttpError(403, 'Недостаточно прав');
+      return send(res, 200, print.statement(statement(Object.fromEntries(url.searchParams))), { 'Content-Type': 'text/html; charset=utf-8' });
+    }
     const sv = /^\/print\/contractor\/(\d+)\/sverka$/.exec(pathname);
     if (sv) {
       if (!user) { res.writeHead(302, { Location: '/' }); return res.end(); }

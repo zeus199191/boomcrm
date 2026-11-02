@@ -1702,6 +1702,41 @@ function bindPeriod(page, cb) {
 }
 const monthStart = () => today().slice(0, 8) + '01';
 
+// Выписка по операциям: период + способы оплаты + приход/расход → печать/PDF или Excel
+function statementModal(from, to) {
+  const ym = (d) => d.toISOString().slice(0, 10);
+  const m = modal('Выписка по операциям', `
+    <div class="row"><div class="field"><label>С</label><input type="date" name="from" value="${from}"></div><div class="field"><label>По</label><input type="date" name="to" value="${to}"></div></div>
+    <div class="chips" style="margin:-4px 0 12px"><button type="button" class="chip" data-pr="cur">Этот месяц</button><button type="button" class="chip" data-pr="prev">Прошлый месяц</button><button type="button" class="chip" data-pr="today">Сегодня</button></div>
+    <label>Способы оплаты</label>
+    <div class="checkgrid" style="margin-bottom:12px">${Object.entries(METHODS).map(([k, t]) => `<label class="ck"><input type="checkbox" name="m" value="${k}" checked> ${t}</label>`).join('')}</div>
+    <div class="field"><label>Операции</label><select name="direction"><option value="">Поступления и расходы</option><option value="in">Только поступления</option><option value="out">Только расходы</option></select></div>
+    <div id="stPrev" class="small muted"></div>`,
+  { submit: '📄 Открыть выписку', footer: '<button type="button" data-x>Отмена</button><button type="button" id="stX">⬇ Excel</button><button class="primary">📄 Открыть выписку</button>',
+    onSubmit: () => { const q = params(); if (q) window.open('/print/statement' + qs(q), '_blank'); return false; } });
+  const f = m.form;
+  const params = () => {
+    const ms = $$('input[name=m]:checked', f).map((x) => x.value);
+    if (!ms.length) { toast('Отметьте хотя бы один способ оплаты', true); return null; }
+    if (f.from.value > f.to.value) { toast('Дата «с» позже даты «по»', true); return null; }
+    return { from: f.from.value, to: f.to.value, methods: ms.length === Object.keys(METHODS).length ? '' : ms.join(','), direction: f.direction.value };
+  };
+  $('#stX', f.closest('.modal') || f).onclick = () => { const q = params(); if (!q) return; const a = document.createElement('a'); a.href = '/api/statement.xlsx' + qs(q); a.click(); };
+  $$('[data-pr]', f).forEach((b) => (b.onclick = () => {
+    const d = new Date(today() + 'T12:00');
+    if (b.dataset.pr === 'today') { f.from.value = f.to.value = today(); }
+    else if (b.dataset.pr === 'cur') { f.from.value = today().slice(0, 8) + '01'; f.to.value = today(); }
+    else { const s0 = new Date(d.getFullYear(), d.getMonth() - 1, 1, 12), e0 = new Date(d.getFullYear(), d.getMonth(), 0, 12); f.from.value = ym(s0); f.to.value = ym(e0); }
+    prev();
+  }));
+  // краткий итог прямо в окне
+  const prev = debounce(async () => {
+    const q = params(); if (!q) { $('#stPrev', f).textContent = ''; return; }
+    try { const r = await GET('/api/statement' + qs(q)); $('#stPrev', f).innerHTML = `Операций: <b>${r.totals.n}</b> · приход <b style="color:var(--ok)">${rub(r.totals.in)}</b> · расход <b style="color:var(--bad)">${rub(r.totals.out)}</b> · итого <b>${rub(r.totals.net)}</b>`; } catch (e) { $('#stPrev', f).textContent = e.message; }
+  }, 250);
+  f.addEventListener('change', prev); prev();
+}
+
 route(/^\/finance$/, async (page, query) => {
   const from = query.from || monthStart(), to = query.to || today();
   const [r, pays, mb] = await Promise.all([GET('/api/reports/finance' + qs({ from, to })), GET('/api/payments' + qs({ from, to })), GET('/api/money/balances' + qs({ from, to }))]);
@@ -1712,7 +1747,7 @@ route(/^\/finance$/, async (page, query) => {
   const byM = (dir) => Object.entries(METHODS).map(([k, t]) => [t, r.byMethod.find((x) => x.direction === dir && x.method === k)?.s || 0]);
   const catList = (dir) => r.byCategory.filter((x) => x.direction === dir);
   const maxCat = Math.max(1, ...r.byCategory.map((x) => x.s));
-  page.innerHTML = `<div class="topbar"><h1>Финансы</h1><a class="btn sm" href="#/finance/bank">🏦 Банк${mb.bank_new ? ` <span class="badge red">${mb.bank_new}</span>` : ''}</a><div class="sp"></div>${periodBar(page, from, to)}</div>
+  page.innerHTML = `<div class="topbar"><h1>Финансы</h1><a class="btn sm" href="#/finance/bank">🏦 Банк${mb.bank_new ? ` <span class="badge red">${mb.bank_new}</span>` : ''}</a><button class="sm" id="stmt">📄 Выписка</button><div class="sp"></div>${periodBar(page, from, to)}</div>
   <div class="card"><div class="inline" style="margin-bottom:10px;flex-wrap:wrap"><h2 style="margin:0;flex:1">Деньги в кассах</h2>
       <button class="sm" id="cashOut">💵 Обналичить</button><button class="sm" id="moveMoney">⇄ Перемещение</button>${isAdmin() ? '<button class="sm" id="reconcile">✓ Сверка остатков</button>' : ''}</div>
     <div class="grid g4" style="margin-bottom:12px">${Object.entries(WALLET).map(([k, t]) => `<div class="kpi"><div class="l">${t} — сейчас</div><div class="v ${mb.now[k] < 0 ? 'bad' : ''}">${rub(mb.now[k])}</div></div>`).join('')}
@@ -1771,6 +1806,7 @@ route(/^\/finance$/, async (page, query) => {
   { onSubmit: async (d) => { await POST('/api/payments', { ...d, direction: dir }); toast('Проведено'); navigate(); },
     onOpen: (f) => { const c = $('#cat', f); const t = () => $('#empF', f).classList.toggle('hidden', c.value !== 'Зарплата'); c.onchange = t; t(); } });
   const mopts = (sel, skip) => opts(Object.entries(WALLET).filter(([k]) => k !== skip), sel);
+  $('#stmt', page).onclick = () => statementModal(from, to);
   $('#cashOut', page).onclick = () => modal('Обналичивание', `
     <div class="small muted" style="margin-bottom:8px">Укажите, сколько сняли с каждого источника. «Получено» — сумма, пришедшая в наличные; комиссия банка списывается с источника дополнительно.</div>
     ${[['transfer', 'Со счёта'], ['card', 'С карты']].map(([k, t]) => `<div class="row"><div class="field"><label>${t}: получено, ₽ <span class="muted">(сейчас ${rub(mb.now[k])})</span></label><input name="a_${k}" type="number" step="any" min="0"></div>
