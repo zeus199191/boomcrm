@@ -341,6 +341,16 @@ async function navigate() {
 const go = (p) => { location.hash = '#' + p; };
 window.addEventListener('hashchange', navigate);
 
+// Напоминание сохранить полную копию базы (пн/ср/пт, первый вход за день)
+function backupPrompt() {
+  const p = S.me.backup_prompt; if (!p) return;
+  S.me.backup_prompt = null; POST('/api/backup/prompt-seen').catch(() => {});
+  setTimeout(() => modal('💾 Сохранить копию базы?', `<p>Сегодня день резервной копии. Скачайте полную копию CRM — база, фото заказов, публикации и картинки — и сохраните её у себя (на компьютер, флешку или в облако).</p>
+    <p class="small muted">Копия нужна, чтобы быстро перенести CRM на другой сервер или восстановить данные. ${p.last ? 'Последняя копия: ' + esc(p.last) + '.' : 'Копий ещё не делали.'}</p>`,
+  { footer: '<button type="button" data-x>Не сейчас</button><a class="btn primary" href="/api/backup/full" id="bkGo">⬇ Скачать копию</a>' }), 1200);
+  setTimeout(() => { const a = $('#bkGo'); if (a) a.onclick = () => { toast('Копия готовится — скачивание начнётся через несколько секунд'); setTimeout(() => a.closest('.overlay')?.remove(), 300); }; }, 1400);
+}
+
 async function boot() {
   try { S.me = await GET('/api/me'); } catch { return renderLogin(); }
   S.staff = await GET('/api/staff');
@@ -348,6 +358,7 @@ async function boot() {
   refreshLeadsBadge();
   setInterval(refreshLeadsBadge, 60000);
   navigate();
+  backupPrompt();
 }
 
 let CACHE_CONTR = null;
@@ -2592,6 +2603,7 @@ const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => mod
     <h3 style="margin-top:14px">Доступ к разделам</h3>
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_marketing" ${u.perm_marketing === 1 || ((u.perm_marketing === null || u.perm_marketing === undefined) && (u.role === 'admin' || u.role === 'senior')) ? 'checked' : ''}> Маркетинг — все инструменты (аналитика, контент-план, бюджет, база, отзывы, SMS, публикации)</label>
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_smm" ${u.perm_smm === 1 ? 'checked' : ''}> SMM — только публикации в MAX, Telegram, ВКонтакте и на сайт</label>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_backup" ${u.perm_backup === 1 ? 'checked' : ''}> Полная копия базы — может скачивать, напоминание пн/ср/пт при первом входе</label>
     <h3 style="margin-top:14px">MAX и уведомления</h3>
     <div class="inline" style="margin-bottom:8px">${u.max_linked ? '<span class="badge ok">MAX подключён</span>' : '<span class="badge">MAX не подключён</span>'}
       <button type="button" class="sm" data-mxl>${u.max_linked ? 'Переподключить' : '📲 Подключить MAX'}</button>${u.max_linked ? '<button type="button" class="sm ghost danger" data-mxu>Отключить</button>' : ''}</div>
