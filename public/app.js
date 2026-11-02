@@ -244,7 +244,7 @@ const NAV = [
 function renderShell() {
   const u = S.me.user;
   const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice() && (n[0] !== '/stock' || S.me.stock_on)) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
-  $('#root').innerHTML = `<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
+  $('#root').innerHTML = `${S.me.test_copy ? '<div style="background:#b45309;color:#fff;text-align:center;font-size:13px;padding:5px 10px;position:sticky;top:0;z-index:50">ПРОБНАЯ КОПИЯ CRM на новом хостинге — изменения здесь не попадут в рабочую CRM. Боты, касса, банк и SMS отключены.</div>' : ''}<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
     <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : p === '/warranty' ? '<span class="badge red hidden" id="wBadge" title="Гарантия: 30+ дней"></span>' : ''}</a>`).join('')}</nav>
@@ -2826,7 +2826,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
 &lt;/script&gt;</pre>
       <div class="small muted">Тот же адрес подходит для Тильды (вебхук), квизов и чат-ботов: POST JSON или form-data, поля name, phone, car, message, source, ключ — в заголовке X-API-Key или параметре ?key=.</div></div>
     <div class="card"><h2>Резервные копии</h2><div class="small muted" style="margin-bottom:10px">Сервер делает копию базы каждую ночь и хранит 30 последних. Скачивайте копию себе раз в неделю.</div>
-      <a class="btn" href="/api/backup">⬇ Скачать копию базы</a></div>
+      <a class="btn" href="/api/backup">⬇ Скачать копию базы</a> <a class="btn" href="/api/backup/full" title="База + фото заказов + публикации + картинки — для переноса на другой сервер (boomimport)">⬇ Полная копия для переноса</a></div>
   </div><div style="margin-top:14px"><button class="primary">Сохранить настройки</button></div></form>
   <div class="grid g2" style="margin-top:14px">
     <div class="card" id="updCard"><h2>Обновление и домен</h2><div class="muted">Загрузка…</div></div>

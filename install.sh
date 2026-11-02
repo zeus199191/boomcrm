@@ -200,6 +200,16 @@ ufw --force enable >/dev/null
 c_ok "Firewall: открыты только SSH, HTTP и HTTPS"
 
 # --- Обновление и подключение домена из интерфейса CRM (без консоли) ---
+# Перенос на другой сервер: boomexport — полная копия (база + все файлы) в /root; boomimport ФАЙЛ — восстановление
+cat > /usr/local/bin/boomexport <<EOF2
+#!/usr/bin/env bash
+DATA_DIR=$DATA_DIR APP_DIR=$APP_DIR exec bash $APP_DIR/scripts/boomexport.sh "\$@"
+EOF2
+cat > /usr/local/bin/boomimport <<EOF2
+#!/usr/bin/env bash
+DATA_DIR=$DATA_DIR PORT=$PORT exec bash $APP_DIR/scripts/boomimport.sh "\$@"
+EOF2
+chmod 755 /usr/local/bin/boomexport /usr/local/bin/boomimport
 # Проверка во время сбоя: в консоли сервера набрать  boomcheck  — покажет, где обрыв (CRM, nginx или сеть до сервера)
 cat > /usr/local/bin/boomcheck <<EOF2
 #!/usr/bin/env bash
