@@ -108,13 +108,12 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && pathname.startsWith('/brand-logo/') && require('./lib/brands').serve(req, res, pathname)) return;
     if (req.method === 'GET' && pathname.startsWith('/works-media/') && require('./lib/pubs').serve(req, res, pathname)) return;
-    if (req.method === 'GET' && (pathname === '/raboty' || pathname === '/raboty/')) {
+    // страницы сайта: каждый раздел — отдельная страница
+    const SITE_PAGES = { '/uslugi': 'services', '/avtozvuk': 'sound', '/signalizacii': 'alarms', '/raboty': 'works', '/otzyvy': 'reviews', '/kontakty': 'contacts' };
+    const sp = SITE_PAGES[pathname.replace(/\/+$/, '')];
+    if (req.method === 'GET' && sp) {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
-      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'works' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-    }
-    if (req.method === 'GET' && (pathname === '/avtozvuk' || pathname === '/avtozvuk/')) {
-      if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
-      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'sound' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: sp }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     }
     if (req.method === 'GET' && (pathname === '/crm' || pathname.startsWith('/crm/'))) {
       // версия в адресах скрипта и стилей — после обновления браузер (и иконка на iPhone) сразу берёт новые файлы, а не старые из кэша
