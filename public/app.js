@@ -2097,7 +2097,8 @@ route(/^\/marketing$/, async (page, query) => {
 });
 
 // ================= Публикации: один пост → MAX, Telegram, ВКонтакте, сайт =================
-const PUB_CH = [['max', 'MAX'], ['tg', 'Telegram'], ['vk', 'ВКонтакте'], ['site', 'Сайт «Наши работы»']];
+const PUB_CH = [['max', 'MAX'], ['vk', 'ВКонтакте'], ['site', 'Сайт «Наши работы»']];
+const SITE_CATS = { sound: 'Автозвук', alarm: 'Автосигнализации', noise: 'Шумоизоляция', other: 'Разное' };
 function uploadRaw(url, blob, onProgress) {
   return new Promise((ok, no) => {
     const x = new XMLHttpRequest(); x.open('POST', url); x.setRequestHeader('Content-Type', blob.type || 'application/octet-stream');
@@ -2130,15 +2131,15 @@ async function mkPubs(box, query) {
       <div class="field"><label>Текст поста</label><textarea id="pbX" rows="10" placeholder="Выберите работу выше — CRM предложит текст по заказ-наряду">${esc(draft?.text || '')}</textarea><div class="small muted" id="pbCnt"></div></div>
       <div class="field"><label>Фото и видео * <span class="muted small">(без них пост не публикуется; первое — обложка)</span></label><div class="photos" id="pbM"></div>
         <label class="btn sm" style="cursor:pointer;margin-top:6px">📷 Добавить фото<input type="file" accept="image/*" multiple hidden id="pbF"></label> <span class="small muted" id="pbUp"></span></div>
+      <div class="field"><label>Раздел на сайте («Наши работы»)</label><select id="pbCat">${opts([['', 'Авто — по видам работ в заказе'], ...Object.entries(SITE_CATS)], draft?.category || '')}</select>
+        <div class="small muted" id="pbCatHint">«Авто» — CRM сама определит раздел по работам и товарам заказа: сигнализации, автозвук, шумоизоляция; остальное — «Разное».</div></div>
       <div class="field"><label>Куда публиковать</label>${PUB_CH.map(([k, n]) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;color:var(--text);${chOn[k] ? '' : 'opacity:.55'}"><input type="checkbox" data-ch="${k}" ${!chOn[k] ? 'disabled' : draft?.results?.[k]?.ok ? '' : 'checked'} style="width:16px;height:16px;flex:none;margin-top:2px"><span><b>${n}</b> <span class="small muted">— ${esc(chNote[k])}</span></span></label>`).join('')}</div>
       <div class="inline"><button class="primary" id="pbGo">🚀 Опубликовать</button>${cur.id ? '<button type="button" class="ghost danger" id="pbDel">Удалить черновик</button>' : ''}</div>
       <div id="pbRes" style="margin-top:10px"></div></div>
     <div>
       ${!S.me.perms?.marketing ? '' : `<div class="card"><h2>Подключения</h2>
         <div class="small muted" style="margin-bottom:8px"><b>MAX</b> — чат или канал для публикаций выбирается в Настройках → MAX (бот должен быть администратором).<br>
-        <b>Telegram</b> — добавьте бота студии (из Настроек → Telegram) <b>администратором канала</b> с правом публикации и укажите канал: <code>@имя_канала</code> или его ID.<br>
         <b>ВКонтакте</b> — нужен ключ доступа администратора группы с правами <i>wall, photos, video</i> и ID группы. Ключ сообщества из настроек группы фото на стену не загружает — понадобится ключ пользователя (VK ID).</div>
-        <div class="row"><div class="field"><label>Telegram-канал</label><input id="pbTg" value="${esc(st.tg_post_chat)}" placeholder="@bscaraudio38"></div></div>
         <div class="row"><div class="field"><label>ID группы ВКонтакте</label><input id="pbVg" value="${esc(st.vk_group_id)}" placeholder="bscaraudio38 или 123456"></div>
           <div class="field"><label>Ключ доступа ВКонтакте ${st.vk_token ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="pbVt" type="password" autocomplete="new-password" placeholder="${st.vk_token ? '•••••• (не менять)' : 'vk1.a.…'}"></div></div>
         <h3 style="margin:14px 0 6px">ИИ для текстов</h3>
@@ -2150,13 +2151,14 @@ async function mkPubs(box, query) {
         <div id="aiY"><div class="row"><div class="field"><label>API-ключ Yandex ${st.yandex_key ? '<span class="muted">(сохранён)</span>' : ''}</label><input id="aiYk" type="password" autocomplete="new-password" placeholder="${st.yandex_key ? '•••••• (не менять)' : 'AQVN…'}"></div>
           <div class="field"><label>ID каталога</label><input id="aiYf" value="${esc(st.yandex_folder)}" placeholder="b1g…"></div></div>
           <div class="field"><label>Модель</label><input id="aiYm" value="${esc(st.yandex_model)}" placeholder="yandexgpt/latest"></div></div>
-        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="aiTest">Проверить ИИ</button><button type="button" class="sm" id="pbTtg">Проверить Telegram</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>`}
+        <div class="inline" style="flex-wrap:wrap;gap:6px"><button type="button" class="sm primary" id="pbSave">Сохранить</button><button type="button" class="sm" id="aiTest">Проверить ИИ</button><button type="button" class="sm" id="pbTvk">Проверить ВКонтакте</button><a class="btn sm ghost" href="#/settings">Настройки MAX</a></div></div>`}
       <div class="card"><h2>Публикации</h2>${list.length ? list.map((p) => `<div class="li" style="align-items:flex-start;gap:10px">
         ${p.media[0] ? (p.media[0].kind === 'video' ? `<video src="/api/pubs/${p.id}/media/${p.media[0].id}#t=0.5" muted preload="metadata" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none"></video>` : `<img src="/api/pubs/${p.id}/media/${p.media[0].id}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none" alt="">`) : '<div style="width:64px;height:64px;border-radius:8px;background:var(--line);flex:none"></div>'}
         <div class="grow"><div class="t">${esc(p.title || (p.text || '').slice(0, 60) || 'Без текста')}</div>
-          <div class="s">${p.status === 'draft' ? 'черновик' : dt(p.published_at)} · ${p.media.length} фото/видео ${resBadges(p)}</div>
+          <div class="s">${p.status === 'draft' ? 'черновик' : dt(p.published_at)} · ${p.media.length} фото/видео${p.site_cat ? ' · раздел «' + (SITE_CATS[p.site_cat] || 'Разное') + '»' : ''} ${resBadges(p)}</div>
           <div class="inline" style="gap:6px;margin-top:4px;flex-wrap:wrap">${p.status === 'draft' || p.status === 'error' || p.status === 'partial' ? `<button type="button" class="sm" data-pbopen="${p.id}">${p.status === 'draft' ? 'Продолжить' : 'Открыть / повторить'}</button>` : ''}
             ${p.status !== 'draft' ? `<label class="small" style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" data-pbsite="${p.id}" ${p.site_visible ? 'checked' : ''}> на сайте</label>` : ''}
+            ${p.status !== 'draft' ? `<select data-pbcat="${p.id}" class="sm" style="width:auto;padding:4px 8px;font-size:13px" title="Раздел на сайте">${opts([['', 'Раздел: авто (' + (SITE_CATS[p.site_cat] || 'Разное') + ')'], ...Object.entries(SITE_CATS)], p.category || '')}</select>` : ''}
             <button type="button" class="sm ghost danger" data-pbdel="${p.id}">Удалить</button></div></div></div>`).join('') : '<div class="muted small">Пока ничего не публиковали.</div>'}</div>
     </div></div>`;
   const X = $('#pbX', box), T = $('#pbT', box);
@@ -2209,6 +2211,7 @@ async function mkPubs(box, query) {
     const btn = $('#pbGo', box); btn.disabled = true; btn.textContent = '⏳ Публикуем…';
     try {
       await ensure(); await PUT('/api/pubs/' + cur.id, { order_id: cur.order_id || null });
+      await PUT('/api/pubs/' + cur.id, { category: $('#pbCat', box).value }).catch(() => {});
       const r = await POST(`/api/pubs/${cur.id}/publish`, { channels: chs, title: T.value, text: X.value });
       const ok = Object.values(r.results).every((x) => x.ok);
       $('#pbRes', box).innerHTML = Object.entries(r.results).map(([k, v]) => `<div class="small">${v.ok ? '✅' : '❌'} <b>${PUB_CH.find((x) => x[0] === k)[1]}</b> ${v.ok ? (v.url ? `<a href="${esc(v.url)}" target="_blank" rel="noopener">открыть</a>` : 'готово') : esc(v.error || '')}</div>`).join('');
@@ -2230,11 +2233,11 @@ async function mkPubs(box, query) {
     $$('#aiGen,#aiImp', box).forEach((b) => (b.disabled = false));
   };
   if ($('#aiGen', box)) { $('#aiGen', box).onclick = () => aiRun('gen'); $('#aiImp', box).onclick = () => aiRun('improve'); }
-  if ($('#pbSave', box)) $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { tg_post_chat: $('#pbTg', box).value, vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value,
+  if ($('#pbSave', box)) $('#pbSave', box).onclick = async () => { try { await PUT('/api/pubs/settings', { vk_group_id: $('#pbVg', box).value, vk_token: $('#pbVt', box).value,
     ai_provider: $('#aiP', box).value, gigachat_key: $('#aiGk', box).value, gigachat_scope: $('#aiGs', box).value, yandex_key: $('#aiYk', box).value, yandex_folder: $('#aiYf', box).value, yandex_model: $('#aiYm', box).value }); toast('Сохранено'); mkPubs(box, query); } catch (e) { toast(e.message, true); } };
-  if ($('#pbTtg', box)) $('#pbTtg', box).onclick = async () => { try { const r = await POST('/api/pubs/test/tg'); toast('Telegram: канал «' + (r.name || '') + '» доступен'); } catch (e) { toast(e.message, true); } };
   if ($('#pbTvk', box)) $('#pbTvk', box).onclick = async () => { try { const r = await POST('/api/pubs/test/vk'); toast('ВКонтакте: группа «' + (r.name || '') + '» доступна'); } catch (e) { toast(e.message, true); } };
   $$('[data-pbopen]', box).forEach((b) => (b.onclick = () => go(pubBase({ pub: b.dataset.pbopen }))));
+  $$('[data-pbcat]', box).forEach((c) => (c.onchange = async () => { await PUT('/api/pubs/' + c.dataset.pbcat, { category: c.value }); toast('Раздел на сайте изменён'); }));
   $$('[data-pbsite]', box).forEach((c) => (c.onchange = async () => { await PUT('/api/pubs/' + c.dataset.pbsite, { site_visible: c.checked }); toast(c.checked ? 'Показывается на сайте' : 'Убрано с сайта'); }));
   $$('[data-pbdel]', box).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить публикацию? С сайта она пропадёт; в MAX, Telegram и ВКонтакте пост останется — его удаляют там.', 'Удалить')) { await DEL('/api/pubs/' + b.dataset.pbdel); mkPubs(box, query); } }));
 }

@@ -108,6 +108,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && pathname.startsWith('/brand-logo/') && require('./lib/brands').serve(req, res, pathname)) return;
     if (req.method === 'GET' && pathname.startsWith('/works-media/') && require('./lib/pubs').serve(req, res, pathname)) return;
+    if (req.method === 'GET' && (pathname === '/raboty' || pathname === '/raboty/')) {
+      if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
+      return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'works' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    }
     if (req.method === 'GET' && (pathname === '/avtozvuk' || pathname === '/avtozvuk/')) {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
       return send(res, 200, require('./lib/landing').render({ loggedIn: !!user, page: 'sound' }), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
