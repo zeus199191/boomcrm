@@ -2846,6 +2846,8 @@ route(/^\/settings$/, async (page, query = {}) => {
       <ol class="small muted" style="padding-left:18px;margin-top:0"><li>Создайте бота у @BotFather, скопируйте токен.</li><li>Создайте группу сотрудников, добавьте туда бота и напишите в группе <code>/id</code> — бот ответит ID чата.</li><li>Клиенты и мастера пишут боту /start и делятся номером — привязка по телефону.</li></ol>
       <div class="field"><label>Токен бота</label><input name="tg_token" value="${esc(s.tg_token)}" placeholder="123456:ABC…"></div>
       <div class="field"><label>ID чата сотрудников</label><input name="tg_staff_chat" value="${esc(s.tg_staff_chat)}" placeholder="-100…"></div>
+      <div class="field"><label>Адрес Telegram API (посредник) — нужен, если сервер в России</label><input name="tg_api_base" value="${esc(s.tg_api_base || '')}" placeholder="пусто — напрямую https://api.telegram.org">
+        <div class="small muted" style="margin-top:4px">С российских серверов Telegram заблокирован: бот и публикации в канал не работают. Нужен посредник за рубежом — небольшой сервер, через который CRM обращается к Telegram (настройка — одной командой, скрипт <code>scripts/tg-relay.sh</code>). Сюда вставляется адрес, который он выдаст.</div></div>
       <label class="inline" style="color:var(--text);margin-bottom:10px"><input type="checkbox" id="tgc" ${s.tg_notify_client_done === '1' ? 'checked' : ''}> Сообщать клиенту, что авто готово</label>
       <button type="button" class="sm" id="tgTest">Отправить тест</button>
       <div class="small muted" style="margin-top:8px">Бот присылает: новые заявки, новые записи, «авто готово», в 18:00 — список записей на завтра; клиентам — напоминание за день.</div></div>
