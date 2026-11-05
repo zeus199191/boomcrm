@@ -469,3 +469,35 @@ i.rv { background: var(--accent); } i.ld { background: #4ea1ff; }
 .opitems td::before { content: none !important; }
 .opitems td.r { text-align: right; white-space: nowrap; }
 .opitems tr { display: table-row !important; padding: 0 !important; border: 0 !important; }
+
+/* ===== Светлая тема (выбирается каждым сотрудником: кнопка ☀/🌙 внизу меню) ===== */
+html[data-theme="light"] {
+  --bg: #f3f5f8; --panel: #ffffff; --panel2: #f0f2f6; --line: #e1e5eb; --line2: #cfd6df;
+  --text: #1a1f29; --muted: #657084; --accent: #ff5a1f; --accent2: #d9480f; --accentbg: rgba(255,90,31,.10);
+  --ok: #18924f; --warn: #b7790b; --bad: #d92d2d; --info: #1f6fd0; --violet: #6d4fe0;
+  --sh: 0 8px 30px rgba(20,30,50,.12);
+  color-scheme: light;
+}
+html[data-theme="light"] button:hover, html[data-theme="light"] .btn:hover { border-color: #aab3c0; }
+html[data-theme="light"] .st-new { background: rgba(101,112,132,.14); color: #4b5565; }
+html[data-theme="light"] .st-scheduled { background: rgba(31,111,208,.12); color: #1f6fd0; }
+html[data-theme="light"] .st-cancelled { background: rgba(217,45,45,.10); color: #c43c3c; }
+html[data-theme="light"] .st-estimate { background: rgba(109,79,224,.12); color: #6d4fe0; }
+html[data-theme="light"] .cal .slot { border-bottom-color: rgba(0,0,0,.06); }
+html[data-theme="light"] .cal .ev.st-scheduled { background: #e8f1fd; }
+html[data-theme="light"] .cal .ev.st-in_work { background: #fdeee7; }
+html[data-theme="light"] .cal .ev.st-waiting { background: #fdf4e1; }
+html[data-theme="light"] .cal .ev.st-done { background: #e5f5ec; }
+html[data-theme="light"] .cal .ev.st-issued { background: #efeafd; }
+html[data-theme="light"] .overlay { background: rgba(20,26,38,.45); }
+html[data-theme="light"] .bars .b i.out { background: #c3cad5; }
+html[data-theme="light"] .jr tr.off .jd { color: #c43c3c; background: #fdecec; }
+html[data-theme="light"] .jr .offl, html[data-theme="light"] .jr .nrl, html[data-theme="light"] .sched th.we { color: #c43c3c; }
+html[data-theme="light"] .offwarn { color: #a12b2b; background: rgba(217,45,45,.08); }
+html[data-theme="light"] .sched td.dflt-off { background: repeating-linear-gradient(135deg, transparent 0 5px, rgba(0,0,0,.04) 5px 10px); }
+html[data-theme="light"] .sched td.st-vac { color: #1f5fb8; } html[data-theme="light"] .sched td.st-sick { color: #8a5a00; } html[data-theme="light"] .sched td.st-abs { color: #b42323; }
+html[data-theme="light"] .sched td.today { box-shadow: inset 0 0 0 2px rgba(0,0,0,.25); }
+html[data-theme="light"] .tabbar { background: rgba(255,255,255,.94); }
+html[data-theme="light"] .login { background: radial-gradient(1200px 600px at 20% -10%, rgba(255,90,31,.14), transparent), var(--bg); }
+html[data-theme="light"] option.nr { color: #c43c3c; }
+.themebtn { min-width: 38px; }

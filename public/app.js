@@ -249,11 +249,12 @@ function renderShell() {
     <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
     <nav class="nav">${allowed.map(([p, t, ic]) => `<a href="#${p}" data-p="${p}" title="${t}">${ICONS[ic]}<span>${t}</span>${p === '/leads' ? '<span class="badge red hidden" id="leadsBadge"></span>' : p === '/messages' ? '<span class="badge red hidden" id="msgBadge"></span>' : p === '/warranty' ? '<span class="badge red hidden" id="wBadge" title="Гарантия: 30+ дней"></span>' : ''}</a>`).join('')}</nav>
     <div class="foot"><div class="who">${esc(u.name)}</div><div class="role">${ROLES[myRole()]}</div>
-      <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm" id="logout">Выйти</button></div>
+      <div class="inline"><button class="sm" id="myPass">Пароль</button><button class="sm themebtn" id="themeBtn" title="Светлая / тёмная тема">${curTheme() === 'light' ? '🌙' : '☀️'}</button><button class="sm" id="logout">Выйти</button></div>
       ${S.me.max_on ? `<button class="sm" id="myMax" style="margin-top:6px;width:100%;justify-content:center">${S.me.my_max ? '✓ MAX подключён' : '📲 Подключить мой MAX'}</button>` : ''}</div>
   </aside><div class="scrim" id="scrim"></div><main class="main" id="page"></main></div>
   <nav class="tabbar" id="tabbar">${tabItems(allowed).map(([p, t, ic]) => `<a href="#${p}" data-p="${p}">${ICONS[ic]}<span>${t}</span></a>`).join('')}<a href="#" id="tabMore">${ICONS.menu}<span>Ещё</span></a></nav>`;
   $('#logout').onclick = async () => { await POST('/api/logout'); S.me = null; renderLogin(); };
+  $('#themeBtn').onclick = async () => { const t = curTheme() === 'light' ? 'dark' : 'light'; applyTheme(t); S.me.user.theme = t; try { await PUT('/api/me/theme', { theme: t }); } catch {} };
   $('#myPass').onclick = changeMyPassword;
   const mm = $('#myMax'); if (mm) mm.onclick = async () => { try { maxLinkModal(await POST('/api/me/max-link'), S.me.user.name); } catch (e) { toast(e.message, true); } };
   const sideOpen = (on) => { $('#side').classList.toggle('open', on); $('#scrim').classList.toggle('on', on); document.body.style.overflow = on ? 'hidden' : ''; };
@@ -351,9 +352,20 @@ function backupPrompt() {
   setTimeout(() => { const a = $('#bkGo'); if (a) a.onclick = () => { toast('Копия готовится — скачивание начнётся через несколько секунд'); setTimeout(() => a.closest('.overlay')?.remove(), 300); }; }, 1400);
 }
 
+// Тема оформления — у каждого сотрудника своя (хранится в профиле и в браузере, чтобы не мигало при загрузке)
+const curTheme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+function applyTheme(t) {
+  if (t === 'light') document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem('crmTheme', t); } catch {}
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = t === 'light' ? '#f3f5f8' : '#0e1014';
+  const cs = document.querySelector('meta[name=color-scheme]'); if (cs) cs.content = t === 'light' ? 'light' : 'dark';
+  const b = $('#themeBtn'); if (b) { b.textContent = t === 'light' ? '🌙' : '☀️'; b.title = t === 'light' ? 'Включить тёмную тему' : 'Включить светлую тему'; }
+}
+
 async function boot() {
   try { S.me = await GET('/api/me'); } catch { return renderLogin(); }
   S.staff = await GET('/api/staff');
+  if (S.me.user.theme) applyTheme(S.me.user.theme);
   renderShell();
   refreshLeadsBadge();
   setInterval(refreshLeadsBadge, 60000);
