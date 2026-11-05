@@ -342,6 +342,15 @@ async function navigate() {
 const go = (p) => { location.hash = '#' + p; };
 window.addEventListener('hashchange', navigate);
 
+// Утреннее приветствие (при первом входе за день)
+function greetPrompt() {
+  const t = S.me.greet; if (!t) return;
+  S.me.greet = null; POST('/api/me/greet-seen').catch(() => {});
+  const h = new Date().getHours(); const hi = h < 12 ? '☀️ Доброе утро!' : h < 18 ? '👋 Добрый день!' : '🌙 Добрый вечер!';
+  setTimeout(() => modal(hi, `<div style="font-size:16px;line-height:1.6">${esc(t)}</div>`,
+    { footer: '<button type="button" class="primary" data-x>Спасибо, за работу! 💪</button>' }), 700);
+}
+
 // Напоминание сохранить полную копию базы (пн/ср/пт, первый вход за день)
 function backupPrompt() {
   const p = S.me.backup_prompt; if (!p) return;
@@ -370,6 +379,7 @@ async function boot() {
   refreshLeadsBadge();
   setInterval(refreshLeadsBadge, 60000);
   navigate();
+  greetPrompt();
   backupPrompt();
 }
 
