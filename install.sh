@@ -279,6 +279,27 @@ WantedBy=multi-user.target
 EOF2
 systemctl daemon-reload
 systemctl enable --now boomcrm-update.path >/dev/null 2>&1
+# самоконтроль раз в минуту: CRM, nginx, IPv4/IPv6, соединения → «Диагностика»; зависший nginx перезапускается сам
+cat > /etc/systemd/system/boomcrm-mon.service <<EOF2
+[Unit]
+Description=Boomsystem CRM self-check
+[Service]
+Type=oneshot
+Environment=DATA_DIR=$DATA_DIR PORT=$PORT DOMAIN=$DOMAIN
+ExecStart=/bin/bash $APP_DIR/scripts/boommon.sh
+EOF2
+cat > /etc/systemd/system/boomcrm-mon.timer <<EOF2
+[Unit]
+Description=Boomsystem CRM self-check every minute
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=5
+[Install]
+WantedBy=timers.target
+EOF2
+systemctl daemon-reload
+systemctl enable --now boomcrm-mon.timer >/dev/null 2>&1 || true
 c_ok "Обновление из интерфейса CRM включено (Настройки → Обновление)"
 
 # --- Ежедневная резервная копия в 03:30 ---
