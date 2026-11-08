@@ -802,7 +802,7 @@ route(/^\/orders\/(\d+)$/, async (page, id) => {
   bindAccept(page, o, reload);
   const mmb = $('#msgMaster', page);
   if (mmb) mmb.onclick = () => modal('Сообщение мастеру · ' + (o.master_name || ''), `
-    <div class="small muted" style="margin-bottom:8px">Уйдёт в MAX (или Telegram) от бота студии с вашей подписью и номером заказа. Ответ мастера появится в истории заказа и в «Сообщениях».</div>
+    <div class="small muted" style="margin-bottom:8px">Уйдёт в MAX от бота студии с вашей подписью и номером заказа. Ответ мастера появится в истории заказа и в «Сообщениях».</div>
     <div class="field"><textarea name="text" rows="4" required placeholder="Напр.: клиент просит поставить сабвуфер левее, перезвони ему"></textarea></div>`,
   { submit: 'Отправить', onSubmit: async (d) => { const r = await POST(`/api/orders/${o.id}/message`, { text: d.text }); toast('Отправлено: ' + r.channels.join(', ').replace('max', 'MAX').replace('telegram', 'Telegram')); reload(); } });
   // inline-редактирование позиций
@@ -1600,7 +1600,7 @@ function warrantySettingsModal(meta) {
   const staff = S.staff.filter((u) => u.role !== 'master' || cur.includes(u.id));
   const auto = !cur.length && meta.controllers.length ? meta.controllers.map((u) => u.id) : cur;
   modal('Напоминания по гарантии', `
-    <p class="small muted">Напоминание приходит в MAX (если MAX не подключён — в Telegram) контролёрам и ответственному по случаю, пока товар не выдан клиенту. Отсчёт — от даты приёма. По закону срок — не более ${meta.legal_days} дней.</p>
+    <p class="small muted">Напоминание приходит в MAX контролёрам и ответственному по случаю, пока товар не выдан клиенту. Отсчёт — от даты приёма. По закону срок — не более ${meta.legal_days} дней.</p>
     <div class="field"><label>Кого напоминать</label>${staff.map((u) => `<label class="inline" style="color:var(--text)"><input type="checkbox" name="c_${u.id}" ${auto.includes(u.id) ? 'checked' : ''}> ${esc(u.name)} ${u.max ? '<span class="badge ok">MAX</span>' : '<span class="badge warn">MAX не подключён</span>'}</label>`).join('')}</div>
     <div class="row"><div class="field"><label>На какой день (через запятую)</label><input name="days" value="${esc(meta.days)}"></div>
       <div class="field"><label>Время отправки</label><input type="time" name="time" value="${esc(meta.time)}"></div></div>`,
@@ -2623,7 +2623,7 @@ const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => mod
     <div class="field"><label>% от товаров</label><input name="goods_percent" type="number" step="any" min="0" max="100" value="${u.goods_percent || 0}"></div>
     <div class="field" id="dhF"><label>Часов в рабочий день</label><input name="default_hours" type="number" step="0.5" min="0" max="24" value="${u.default_hours ?? ''}" placeholder="8"></div></div>
     <div class="row"><div class="field"><label>${u.id ? 'Новый пароль (пусто — не менять)' : 'Пароль * (от 6 символов)'}</label><input name="password" type="text" ${u.id ? '' : 'required minlength="6"'} autocomplete="new-password"></div>
-    <div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div></div>
+    ${S.me.tg_on ? `<div class="field"><label>Telegram chat ID</label><input name="tg_chat_id" value="${esc(u.tg_chat_id || '')}" placeholder="заполнится сам"></div>` : ''}</div>
     ${u.id ? `<label class="inline" style="color:var(--text)"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Активен (может входить)</label>
     <h3 style="margin-top:14px">Доступ к разделам</h3>
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_marketing" ${u.perm_marketing === 1 || ((u.perm_marketing === null || u.perm_marketing === undefined) && (u.role === 'admin' || u.role === 'senior')) ? 'checked' : ''}> Маркетинг — все инструменты (аналитика, контент-план, бюджет, база, отзывы, SMS, публикации)</label>
@@ -2666,7 +2666,7 @@ route(/^\/users$/, async (page) => {
     <td data-l="Телефон">${esc(u.phone || '')}</td><td data-l="% работ" class="r">${u.salary_percent || 0}%</td><td data-l="% товаров" class="r">${u.goods_percent || 0}%</td><td data-l="MAX">${u.max_linked ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td><td data-l="Telegram">${u.tg_chat_id ? '<span class="badge ok">подключён</span>' : '<span class="muted">—</span>'}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="card small muted"><b>Роли.</b> Администратор и руководитель-мастер — всё, включая сотрудников, настройки, кассу и зарплату (руководитель-мастер к тому же может быть назначен мастером на работы). Менеджер — клиенты, заказы, касса, отчёты. Мастер — только просмотр: календарь, свои заказ-наряды (состав без права изменения), своя зарплата с расшифровкой по работам. Может добавлять фото в заказ. Статусы, комментарии и настройки уведомлений меняют только руководители и администратор.<br>
-    <b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.</div>`;
+    ${S.me.tg_on ? `<b>Telegram мастера:</b> укажите телефон сотрудника, затем пусть он откроет бота студии и нажмёт «Поделиться номером» — уведомления о назначенных заказах начнут приходить автоматически.` : ''}</div>`;
   $('#add', page).onclick = () => userModal();
   $$('tr[data-id]', page).forEach((tr) => (tr.onclick = () => userModal(rows.find((x) => x.id === +tr.dataset.id))));
 });
@@ -2867,7 +2867,7 @@ route(/^\/settings$/, async (page, query = {}) => {
       <div id="maxChats" class="small muted" style="margin:6px 0 10px"></div>
       <div class="inline"><button type="button" class="sm" id="maxTest">Отправить мне тест</button><button type="button" class="sm" id="digNow">Прислать сводку сейчас</button></div>
       <div class="small muted" style="margin-top:8px">Руководству: заявки, записи, «готово», выдача с оплатой и долгом, остатки, итоги дня, сообщения мастеров. Мастерам: назначенные заказы, переносы, записи на завтра (без кнопок смены статуса). В чат для публикаций — только посты из контент-плана. Кто что получает — в карточке сотрудника.</div></div>
-    <div class="card"><h2>Telegram-бот</h2>
+${S.me.tg_on ? `    <div class="card"><h2>Telegram-бот</h2>
       <ol class="small muted" style="padding-left:18px;margin-top:0"><li>Создайте бота у @BotFather, скопируйте токен.</li><li>Создайте группу сотрудников, добавьте туда бота и напишите в группе <code>/id</code> — бот ответит ID чата.</li><li>Клиенты и мастера пишут боту /start и делятся номером — привязка по телефону.</li></ol>
       <div class="field"><label>Токен бота</label><input name="tg_token" value="${esc(s.tg_token)}" placeholder="123456:ABC…"></div>
       <div class="field"><label>ID чата сотрудников</label><input name="tg_staff_chat" value="${esc(s.tg_staff_chat)}" placeholder="-100…"></div>
@@ -2876,9 +2876,10 @@ route(/^\/settings$/, async (page, query = {}) => {
       <label class="inline" style="color:var(--text);margin-bottom:10px"><input type="checkbox" id="tgc" ${s.tg_notify_client_done === '1' ? 'checked' : ''}> Сообщать клиенту, что авто готово</label>
       <button type="button" class="sm" id="tgTest">Отправить тест</button>
       <div class="small muted" style="margin-top:8px">Бот присылает: новые заявки, новые записи, «авто готово», в 18:00 — список записей на завтра; клиентам — напоминание за день.</div></div>
+` : ''}
     <div class="card"><h2>Заявки с сайта</h2>
       <div class="field"><label>Ключ API</label><div class="inline" style="flex-wrap:nowrap"><input value="${esc(s.api_key)}" readonly id="ak"><button type="button" class="sm" id="regen">Новый</button></div></div>
-      <div class="small muted">Добавьте форму на сайт — заявки попадут в раздел «Заявки» и в Telegram:</div>
+      <div class="small muted">Добавьте форму на сайт — заявки попадут в раздел «Заявки» и в MAX:</div>
       <pre class="code">&lt;form id="boomForm"&gt;
   &lt;input name="name" placeholder="Имя"&gt;
   &lt;input name="phone" placeholder="Телефон" required&gt;
@@ -2961,10 +2962,10 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
   $('#digNow', page).onclick = async () => { await POST('/api/max/digest-now'); toast('Сводка отправлена'); };
   $('#sf', page).onsubmit = async (e) => {
     e.preventDefault();
-    const d = formData(e.target); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';
+    const d = formData(e.target); if ($('#tgc', page)) d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0';
     try { await PUT('/api/settings', d); S.me = await GET('/api/me'); toast('Настройки сохранены'); renderShell(); navigate(); } catch (err) { toast(err.message, true); }
   };
-  $('#tgTest', page).onclick = async () => {
+  if ($('#tgTest', page)) $('#tgTest', page).onclick = async () => {
     try { const d = formData($('#sf', page)); d.tg_notify_client_done = $('#tgc', page).checked ? '1' : '0'; await PUT('/api/settings', d); await POST('/api/telegram/test'); toast('Сообщение отправлено'); } catch (e) { toast(e.message, true); }
   };
   $('#regen', page).onclick = async () => { if (await confirmBox('Старый ключ перестанет работать — формы на сайте нужно будет обновить. Продолжить?', 'Создать новый')) { await POST('/api/settings/regen-key'); navigate(); } };
