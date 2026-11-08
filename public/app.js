@@ -213,6 +213,7 @@ const ICONS = {
   shield: I('<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>'),
   chat: I('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
+  bell: I('<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>'),
 };
 
 // ================= Каркас =================
@@ -237,13 +238,14 @@ const NAV = [
   ['/marketing', 'Маркетинг', 'mega', 'mk'],
   ['/smm', 'SMM', 'mega', 'smm'],
   ['/salary', 'Зарплата', 'salary', 'all'],
+  ['/reminders', 'Напоминания', 'bell', 'rem'],
   ['/users', 'Сотрудники', 'users', 'admin'],
   ['/settings', 'Настройки', 'settings', 'admin'],
 ];
 
 function renderShell() {
   const u = S.me.user;
-  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice() && (n[0] !== '/stock' || S.me.stock_on)) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
+  const allowed = NAV.filter((n) => n[3] === 'all' || (n[3] === 'office' && isOffice() && (n[0] !== '/stock' || S.me.stock_on)) || (n[3] === 'admin' && isAdmin()) || (n[3] === 'rem' && S.me.perms?.reminders) || (n[3] === 'mk' && S.me.perms?.marketing) || (n[3] === 'smm' && S.me.perms?.smm && !S.me.perms?.marketing));
   $('#root').innerHTML = `${S.me.test_copy ? '<div style="background:#b45309;color:#fff;text-align:center;font-size:13px;padding:5px 10px;position:sticky;top:0;z-index:50">ПРОБНАЯ КОПИЯ CRM на новом хостинге — изменения здесь не попадут в рабочую CRM. Боты, касса, банк и SMS отключены.</div>' : ''}<div class="mobilebar"><button class="ghost" id="burger">${ICONS.menu}</button><b>${esc(S.me.company)}</b></div>
   <div class="app"><aside class="side" id="side">
     <div class="logo"><img class="mark" src="/emblem.svg" alt=""><div><b>${esc(S.me.company)}</b><span>CRM автозвук и тюнинг</span></div></div>
@@ -381,6 +383,96 @@ async function boot() {
   navigate();
   greetPrompt();
   backupPrompt();
+  setTimeout(remindersPrompt, 2500); setInterval(remindersPrompt, 5 * 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) remindersPrompt(); });
+}
+
+// ================= Напоминания =================
+const REM_DOW = [[1, 'пн'], [2, 'вт'], [3, 'ср'], [4, 'чт'], [5, 'пт'], [6, 'сб'], [0, 'вс']];
+function remSchedule(r) {
+  const when = r.time ? `в ${r.time}` : 'при первом входе';
+  let s = r.repeat === 'once' ? `${dmy(r.start_date)}, ${when}`
+    : r.repeat === 'daily' ? (r.every > 1 ? `каждые ${r.every} дн.` : 'каждый день') + `, ${when}`
+    : r.repeat === 'weekly' ? `по ${(r.dows ? REM_DOW.filter(([d]) => String(r.dows).split(',').includes(String(d))).map((x) => x[1]).join(', ') : 'дню недели начала')}, ${when}`
+    : (r.every > 1 ? `раз в ${r.every} мес.` : 'каждый месяц') + ` ${Number(r.start_date.slice(8))}-го, ${when}`;
+  if (r.repeat !== 'once') s += ` · с ${dmy(r.start_date)}` + (r.end_date ? ` по ${dmy(r.end_date)}` : '') + (r.count ? ` · ${r.count} раз` : '');
+  return s;
+}
+route(/^\/reminders$/, async (page) => {
+  page.innerHTML = `<div class="topbar"><h1>Напоминания</h1><div class="sp"></div><button class="primary" id="add">+ Напоминание</button></div>
+    <p class="small muted" style="margin-top:-6px">Напоминания можно ставить себе и другим сотрудникам. Без времени — всплывают при первом входе в CRM в нужный день, со временем — когда наступит время. По желанию дублируются в MAX.</p>
+    <div class="card" style="padding:4px 6px"><div class="tblwrap" id="list"></div></div>`;
+  const load = async () => {
+    const rows = await GET('/api/reminders');
+    $('#list', page).innerHTML = rows.length ? `<table class="tbl resp"><thead><tr><th>Напоминание</th><th>Кому</th><th>Когда</th><th>Следующее</th><th>Отметки</th><th></th></tr></thead><tbody>
+      ${rows.map((r) => `<tr style="${r.active ? '' : 'opacity:.55'}"><td data-l="Напоминание"><b>${esc(r.title)}</b>${r.text ? `<div class="small muted">${esc(r.text)}</div>` : ''}<div class="small muted">создал${r.by ? ': ' + esc(r.by) : ''}${r.until_done ? ' · до отметки «выполнено»' : ''}${r.max_send ? ' · MAX' : ''}</div></td>
+        <td data-l="Кому">${esc(r.recipient_names.join(', '))}</td>
+        <td data-l="Когда" class="small">${esc(remSchedule(r))}</td>
+        <td data-l="Следующее">${r.active ? (r.next ? dmy(r.next) : '<span class="muted">—</span>') : '<span class="badge">выключено</span>'}${r.progress ? `<div class="small muted">${esc(r.progress)}</div>` : ''}</td>
+        <td data-l="Отметки" class="small">${r.last_occ ? `<div class="muted">${dmy(r.last_occ)}:</div>` + r.status.map((s) => `<div>${s.done ? '✅' : s.seen ? '👁' : '⏳'} ${esc(s.name)}</div>`).join('') : '<span class="muted">ещё не было</span>'}</td>
+        <td class="r" style="white-space:nowrap"><button class="sm" data-tg="${r.id}" title="${r.active ? 'Выключить' : 'Включить'}">${r.active ? '⏸' : '▶'}</button><button class="sm" data-ed="${r.id}">✎</button><button class="sm ghost danger" data-del="${r.id}">✕</button></td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">Напоминаний пока нет</div>';
+    $$('[data-ed]', page).forEach((b) => (b.onclick = () => remModal(rows.find((x) => x.id === +b.dataset.ed), load)));
+    $$('[data-tg]', page).forEach((b) => (b.onclick = async () => { const r = rows.find((x) => x.id === +b.dataset.tg); await PUT('/api/reminders/' + r.id, { active: !r.active }); load(); }));
+    $$('[data-del]', page).forEach((b) => (b.onclick = async () => { if (await confirmBox('Удалить напоминание?', 'Удалить')) { await DEL('/api/reminders/' + b.dataset.del); load(); } }));
+  };
+  $('#add', page).onclick = () => remModal(null, load);
+  await load();
+});
+async function remModal(r, done) {
+  const users = await GET('/api/reminders/users');
+  const me = S.me.user.id;
+  const rec = r ? r.recipients : [me];
+  const dows = r && r.dows ? String(r.dows).split(',') : [];
+  const rep = r ? r.repeat : 'once';
+  modal(r ? 'Напоминание' : 'Новое напоминание', `
+    <div class="field"><label>О чём напомнить</label><input name="title" required maxlength="200" value="${esc(r?.title || '')}" placeholder="Например: заказать акустику для Иванова"></div>
+    <div class="field"><label>Подробности (необязательно)</label><textarea name="text" rows="2">${esc(r?.text || '')}</textarea></div>
+    <div class="field"><label>Кому напомнить</label><div class="chips" id="remTo">${[...users].sort((a, b) => (b.id === me) - (a.id === me)).map((u) => `<label class="chip ${rec.includes(u.id) ? 'on' : ''}"><input type="checkbox" data-u="${u.id}" ${rec.includes(u.id) ? 'checked' : ''} style="display:none">${u.id === me ? 'Мне' : esc(u.name)}</label>`).join('')}</div></div>
+    <div class="row"><div class="field"><label>Дата (начала)</label><input type="date" name="start_date" value="${esc(r?.start_date || today())}" required></div>
+      <div class="field"><label>Время (пусто — при первом входе)</label><input type="time" name="time" value="${esc(r?.time || '')}"></div></div>
+    <div class="row"><div class="field"><label>Повтор</label><select name="repeat">${opts([['once', 'Однократно'], ['daily', 'Каждые N дней'], ['weekly', 'По дням недели'], ['monthly', 'Каждый месяц']], rep)}</select></div>
+      <div class="field" id="remEvery"><label>Каждые (дней / месяцев)</label><input type="number" name="every" min="1" max="365" value="${r?.every || 1}"></div></div>
+    <div class="field" id="remDows"><label>Дни недели</label><div class="chips">${REM_DOW.map(([d, t]) => `<label class="chip ${dows.includes(String(d)) ? 'on' : ''}"><input type="checkbox" data-d="${d}" ${dows.includes(String(d)) ? 'checked' : ''} style="display:none">${t}</label>`).join('')}</div></div>
+    <div class="row" id="remLim"><div class="field"><label>Сколько раз (пусто — без ограничения)</label><input type="number" name="count" min="1" max="1000" value="${r?.count && r.repeat !== 'once' ? r.count : ''}"></div>
+      <div class="field"><label>До даты (необязательно)</label><input type="date" name="end_date" value="${esc(r?.end_date || '')}"></div></div>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="until_done" ${r?.until_done ? 'checked' : ''}> Напоминать, пока не отмечено «Выполнено» (иначе — один раз за повтор)</label>
+    ${S.me.max_on ? `<label class="inline" style="color:var(--text);margin-top:6px"><input type="checkbox" name="max_send" ${r?.max_send ? 'checked' : ''}> Дублировать в MAX (тем, у кого подключён; без времени — в 9:00)</label>` : ''}`,
+  { submit: r ? 'Сохранить' : 'Создать', onOpen: (f) => {
+    $$('.chip input', f).forEach((c) => (c.onchange = () => c.parentElement.classList.toggle('on', c.checked)));
+    const sync = () => { const v = f.repeat.value; $('#remEvery', f).style.display = v === 'daily' || v === 'monthly' ? '' : 'none'; $('#remDows', f).style.display = v === 'weekly' ? '' : 'none'; $('#remLim', f).style.display = v === 'once' ? 'none' : ''; };
+    f.repeat.onchange = sync; sync();
+  }, onSubmit: async (d, f) => {
+    d.recipients = $$('[data-u]', f).filter((c) => c.checked).map((c) => +c.dataset.u);
+    d.dows = $$('[data-d]', f).filter((c) => c.checked).map((c) => +c.dataset.d);
+    if (!d.recipients.length) { toast('Выберите, кому напомнить', true); return false; }
+    if (d.repeat === 'weekly' && !d.dows.length) { toast('Отметьте дни недели', true); return false; }
+    if (r) await PUT('/api/reminders/' + r.id, d); else await POST('/api/reminders', d);
+    toast(r ? 'Сохранено' : 'Напоминание создано'); done && done();
+  } });
+}
+// всплывающие напоминания: при входе и каждые 5 минут (если окно открыто)
+let REM_OPEN = false;
+async function remindersPrompt() {
+  if (REM_OPEN || document.hidden) return;
+  let list; try { list = await GET('/api/reminders/due'); } catch { return; }
+  if (!list.length) return;
+  REM_OPEN = true;
+  const ack = (x, action, minutes) => POST(`/api/reminders/${x.id}/ack`, { occ: x.occ, action, minutes }).catch(() => {});
+  const m = modal(list.length > 1 ? `🔔 Напоминания (${list.length})` : '🔔 Напоминание', list.map((x, i) => `<div class="card" style="margin-bottom:10px;padding:12px" data-i="${i}">
+      <div style="font-size:16px;font-weight:600">${esc(x.title)}</div>${x.text ? `<div style="margin-top:4px;white-space:pre-wrap">${esc(x.text)}</div>` : ''}
+      <div class="small muted" style="margin-top:4px">${dmy(x.occ)}${x.from && !x.self ? ' · от ' + esc(x.from) : ''}</div>
+      <div class="inline" style="margin-top:8px;gap:6px;flex-wrap:wrap"><button type="button" class="sm primary" data-done="${i}">✅ Выполнено</button><button type="button" class="sm" data-sn="${i}">⏰ Через час</button>${x.until_done ? '' : `<button type="button" class="sm" data-ok="${i}">Понятно</button>`}</div></div>`).join(''),
+  { footer: '<button type="button" data-x>Закрыть</button>' });
+  let left = list.length;
+  const gone = (i) => { $(`[data-i="${i}"]`, m.el)?.remove(); if (--left <= 0) m.close(); };
+  $$('[data-done]', m.el).forEach((b) => (b.onclick = () => { ack(list[+b.dataset.done], 'done'); gone(+b.dataset.done); }));
+  $$('[data-ok]', m.el).forEach((b) => (b.onclick = () => { ack(list[+b.dataset.ok], 'done'); gone(+b.dataset.ok); }));
+  $$('[data-sn]', m.el).forEach((b) => (b.onclick = () => { ack(list[+b.dataset.sn], 'snooze', 60); toast('Напомню через час'); gone(+b.dataset.sn); }));
+  // закрыли окно, не отметив — «пока не выполнено» вернётся через 30 минут
+  const obs = new MutationObserver(() => { if (!m.el.isConnected) { obs.disconnect(); REM_OPEN = false;
+    $$('[data-i]', m.el).forEach((c) => { const x = list[+c.dataset.i]; ack(x, x.until_done ? 'snooze' : 'done', 30); }); } });
+  obs.observe(document.body, { childList: true });
 }
 
 let CACHE_CONTR = null;
@@ -2629,6 +2721,7 @@ const userModal = (u = { role: 'master', active: 1, salary_percent: 50 }) => mod
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_marketing" ${u.perm_marketing === 1 || ((u.perm_marketing === null || u.perm_marketing === undefined) && (u.role === 'admin' || u.role === 'senior')) ? 'checked' : ''}> Маркетинг — все инструменты (аналитика, контент-план, бюджет, база, отзывы, SMS, публикации)</label>
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_smm" ${u.perm_smm === 1 ? 'checked' : ''}> SMM — только публикации в MAX, Telegram, ВКонтакте и на сайт</label>
     <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_backup" ${u.perm_backup === 1 ? 'checked' : ''}> Полная копия базы — может скачивать, напоминание пн/ср/пт при первом входе</label>
+    <label class="inline" style="color:var(--text)"><input type="checkbox" name="perm_reminders" ${u.perm_reminders === 1 ? 'checked' : ''}> Напоминания — может создавать себе и другим сотрудникам</label>
     <h3 style="margin-top:14px">MAX и уведомления</h3>
     <div class="inline" style="margin-bottom:8px">${u.max_linked ? '<span class="badge ok">MAX подключён</span>' : '<span class="badge">MAX не подключён</span>'}
       <button type="button" class="sm" data-mxl>${u.max_linked ? 'Переподключить' : '📲 Подключить MAX'}</button>${u.max_linked ? '<button type="button" class="sm ghost danger" data-mxu>Отключить</button>' : ''}</div>
