@@ -475,6 +475,34 @@ async function remindersPrompt() {
   obs.observe(document.body, { childList: true });
 }
 
+// Настройки → Google-таблица: копия журнала записи на случай, когда CRM недоступна
+async function gsCard(page) {
+  const box = $('#gsCard', page); if (!box) return;
+  const draw = (st) => {
+    box.innerHTML = `<h2>Google-таблица (копия журнала)</h2>
+      <div class="small muted" style="margin-bottom:10px">CRM каждую минуту обновляет в вашей Google-таблице лист <b>«CRM · Журнал»</b> (неделя назад + 3 месяца вперёд: посты, авто, клиент, телефон, мастер, статус) — его можно открыть, когда CRM недоступна. На листе <b>«Записи без CRM»</b> во время сбоя записывайте новые записи — CRM сама перенесёт их в журнал заметками (оранжевые) и пришлёт уведомление. Другие листы таблицы CRM не трогает.</div>
+      ${st.test_copy ? '<div class="small" style="color:var(--bad);margin-bottom:8px">Это пробная копия CRM — синхронизация выключена, чтобы не испортить рабочую таблицу.</div>' : ''}
+      <div class="field"><label>1. Ключ сервисного аккаунта Google (.json)</label>
+        <div class="inline" style="flex-wrap:wrap;gap:6px"><input type="file" id="gsKey" accept=".json,application/json" style="display:none"><button type="button" class="sm" id="gsKeyB">${st.has_key ? '✓ Ключ загружен — заменить' : '⬆ Загрузить ключ'}</button></div>
+        ${st.email ? `<div class="small" style="margin-top:6px">2. Дайте этому адресу доступ <b>«Редактор»</b> в таблице (кнопка «Настройки доступа»):<br><code style="user-select:all;word-break:break-all">${esc(st.email)}</code> <button type="button" class="sm ghost" id="gsCopy">Копировать</button></div>` : ''}</div>
+      <div class="field"><label>3. Ссылка на Google-таблицу</label><input id="gsUrl" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(st.url)}"></div>
+      <label class="inline" style="color:var(--text)"><input type="checkbox" id="gsOn" ${st.on ? 'checked' : ''}> Синхронизировать автоматически (каждую минуту)</label>
+      <div class="inline" style="margin-top:10px;gap:6px;flex-wrap:wrap"><button type="button" class="primary sm" id="gsSave">Сохранить</button><button type="button" class="sm" id="gsSync" ${st.has_key && st.sheet_id ? '' : 'disabled'}>⟳ Проверить и синхронизировать сейчас</button>${st.url ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(st.url)}">Открыть таблицу</a>` : ''}</div>
+      <div class="small" style="margin-top:10px">${st.last_sync ? `Последняя синхронизация: ${esc(st.last_sync)}` : '<span class="muted">Ещё не синхронизировалось</span>'}${st.last_import ? ` · из таблицы перенесено ${esc(st.last_import)}` : ''}</div>
+      ${st.last_error ? `<div class="small" style="color:var(--bad);margin-top:4px">Ошибка: ${esc(st.last_error)}</div>` : ''}`;
+    $('#gsKeyB', box).onclick = () => $('#gsKey', box).click();
+    $('#gsKey', box).onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { draw(await PUT('/api/gsheet', { key: await f.text() })); toast('Ключ загружен'); } catch (err) { toast(err.message, true); } };
+    const cp = $('#gsCopy', box); if (cp) cp.onclick = () => { navigator.clipboard?.writeText(st.email).then(() => toast('Адрес скопирован'), () => {}); };
+    $('#gsSave', box).onclick = async () => { try { draw(await PUT('/api/gsheet', { url: $('#gsUrl', box).value.trim(), on: $('#gsOn', box).checked })); toast('Сохранено'); } catch (err) { toast(err.message, true); } };
+    $('#gsSync', box).onclick = async (e) => {
+      e.target.disabled = true; e.target.textContent = 'Синхронизация…';
+      try { await PUT('/api/gsheet', { url: $('#gsUrl', box).value.trim(), on: $('#gsOn', box).checked }); const r = await POST('/api/gsheet/sync'); draw(r); toast(r.busy ? 'Синхронизация уже идёт' : `Готово${r.imported ? ', перенесено из таблицы: ' + r.imported : ''}`); }
+      catch (err) { toast(err.message, true); draw(await GET('/api/gsheet')); }
+    };
+  };
+  try { draw(await GET('/api/gsheet')); } catch (e) { box.innerHTML = '<h2>Google-таблица</h2><div class="muted">' + esc(e.message) + '</div>'; }
+}
+
 let CACHE_CONTR = null;
 async function contractorsList(force) { if (!CACHE_CONTR || force) CACHE_CONTR = await GET('/api/contractors'); return CACHE_CONTR; }
 async function services() { if (!S.services) S.services = await GET('/api/services'); return S.services; }
@@ -2910,6 +2938,7 @@ async function loadUpdateCard(page) {
     try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
     setTimeout(() => pollUpdate(page), 3000);
     loadUpdateCard(page);
+  gsCard(page);
   };
   $('#updBtn', box).onclick = async () => { if (await confirmBox('Обновить CRM до последней версии? Займёт 1–3 минуты, данные сохранятся.', 'Обновить')) start({}, 'Обновление запущено'); };
   $('#domBtn', box).onclick = async () => {
@@ -3005,6 +3034,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
       <pre id="diagS" class="small" style="white-space:pre-wrap;margin:0 0 10px;color:var(--muted)"></pre>
       <pre id="diagT" style="white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;margin:0">Загрузка…</pre>
       <details style="margin-top:10px"><summary class="small" style="cursor:pointer">Системные журналы сервера</summary><pre id="diagJ" style="white-space:pre-wrap;font-size:11px;max-height:360px;overflow:auto;margin:6px 0 0"></pre></details></div>
+    <div class="card" id="gsCard"><h2>Google-таблица (копия журнала)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="alfaCard"><h2>Альфа-Банк (Alfa API)</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="sabyCard"><h2>Онлайн-касса Saby</h2><div class="muted">Загрузка…</div></div>
     <div class="card" id="smsCard"><h2>SMS-рассылка</h2><div class="muted">Загрузка…</div></div>
