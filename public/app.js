@@ -2938,7 +2938,6 @@ async function loadUpdateCard(page) {
     try { await POST('/api/admin/update', body); toast(msg); } catch (e) { return toast(e.message, true); }
     setTimeout(() => pollUpdate(page), 3000);
     loadUpdateCard(page);
-  gsCard(page);
   };
   $('#updBtn', box).onclick = async () => { if (await confirmBox('Обновить CRM до последней версии? Займёт 1–3 минуты, данные сохранятся.', 'Обновить')) start({}, 'Обновление запущено'); };
   $('#domBtn', box).onclick = async () => {
@@ -3055,6 +3054,7 @@ document.getElementById('boomForm').onsubmit = async (e) =&gt; {
     e.target.value = '';
   };
   loadUpdateCard(page);
+  gsCard(page);
   const diagLoad = async () => {
     try {
       const d = await GET('/api/admin/diag');
