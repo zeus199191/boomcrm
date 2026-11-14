@@ -1,0 +1,31 @@
+name: BoomCRM read-only VPS diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Validate diagnostics SSH key
+        env:
+          KEY: ${{ secrets.BOOMCRM_DIAG_SSH_KEY }}
+        run: |
+          test -n "$KEY" || { echo "Missing BOOMCRM_DIAG_SSH_KEY"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/boomcrm_diag
+          chmod 600 ~/.ssh/boomcrm_diag
+          ssh-keygen -y -f ~/.ssh/boomcrm_diag >/dev/null
+      - name: Verify server host key against pinned fingerprint
+        run: |
+          set -euo pipefail
+          ssh-keyscan -T 10 -t ed25519 89.125.121.183 2>/dev/null > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts || { echo "SSH host key unavailable"; exit 1; }
+          actual=$(ssh-keygen -lf ~/.ssh/known_hosts -E sha256 | awk 'NR==1 {print $2}')
+          expected='SHA256:ATJy0mcix0lzt8UGMci/3buvlux8bMHfHEu6dDnpc5U'
+          test "$actual" = "$expected" || { echo "SSH host key fingerprint mismatch"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+      - name: Run read-only diagnostics
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -i ~/.ssh/boomcrm_diag boomdiag@89.125.121.183
