@@ -1,6 +1,8 @@
 name: BoomCRM read-only VPS diagnostics
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '43 3 * * *'
 permissions:
   contents: read
 jobs:
@@ -29,3 +31,17 @@ jobs:
       - name: Run read-only diagnostics
         run: |
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -i ~/.ssh/boomcrm_diag boomdiag@89.125.121.183
+
+  public-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check landing and CRM endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in / /crm /kontakty; do
+            code=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' --connect-timeout 8 --max-time 20 "https://boomsystem.ru$route")
+            echo "route=$route http_status=$code"
+            if [[ "$code" != 200 ]]; then echo "::error::Unexpected HTTP status for $route: $code"; exit 1; fi
+          done
