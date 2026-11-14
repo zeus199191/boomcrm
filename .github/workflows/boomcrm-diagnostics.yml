@@ -1,0 +1,30 @@
+name: BoomCRM read-only VPS diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Validate required secrets
+        env:
+          KEY: ${{ secrets.BOOMCRM_DIAG_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BOOMCRM_DIAG_KNOWN_HOSTS }}
+        run: |
+          test -n "$KEY" || { echo "Missing BOOMCRM_DIAG_SSH_KEY"; exit 1; }
+          test -n "$KNOWN_HOSTS" || { echo "Missing BOOMCRM_DIAG_KNOWN_HOSTS"; exit 1; }
+      - name: Configure restricted SSH
+        env:
+          KEY: ${{ secrets.BOOMCRM_DIAG_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BOOMCRM_DIAG_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/boomcrm_diag
+          chmod 600 ~/.ssh/boomcrm_diag
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Run read-only diagnostics
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -i ~/.ssh/boomcrm_diag boomdiag@89.125.121.183
