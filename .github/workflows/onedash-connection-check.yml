@@ -1,6 +1,8 @@
 name: OneDash API connection check
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
   push:
     paths:
       - .github/workflows/onedash-connection-check.yml
