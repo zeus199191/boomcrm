@@ -1,0 +1,42 @@
+name: OneDash API connection check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/onedash-connection-check.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check API authorization without exposing credentials
+        env:
+          ONEDASH_API_KEY: ${{ secrets.ONEDASH_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$ONEDASH_API_KEY" ]; then echo "::error::ONEDASH_API_KEY secret is missing"; exit 1; fi
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          base='https://api.rdp-onedash.ru/api'
+          headers={'Authorization':'Bearer '+os.environ['ONEDASH_API_KEY'],'Accept':'application/json'}
+          for endpoint in ('auth/check','vps'):
+              req=urllib.request.Request(base+'/'+endpoint,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as response:
+                      result=json.load(response)
+                      if not result.get('type'):
+                          raise RuntimeError('API returned type=false')
+                      if endpoint=='auth/check':
+                          print('api_authorization=ok')
+                      else:
+                          items=result.get('data',{}).get('items',[])
+                          print('vps_list_access=ok')
+                          print('vps_count='+str(len(items)))
+              except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError,RuntimeError) as e:
+                  print('api_'+endpoint.replace('/','_')+'=failed')
+                  print('error_type='+type(e).__name__)
+                  raise SystemExit(1)
+          PY
