@@ -14,11 +14,25 @@ jobs:
         env:
           KEY: ${{ secrets.BOOMCRM_DIAG_SSH_KEY }}
         run: |
-          test -n "$KEY" || { echo "Missing BOOMCRM_DIAG_SSH_KEY"; exit 1; }
+          set -euo pipefail
+          if [[ -z "$KEY" ]]; then
+            echo "::error::BOOMCRM_DIAG_SSH_KEY is missing or empty"
+            exit 1
+          fi
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/boomcrm_diag
+          # Accept multiline OpenSSH keys and CRLF copied from Windows.
+          printf '%s\n' "$KEY" | tr -d '\r' > ~/.ssh/boomcrm_diag
           chmod 600 ~/.ssh/boomcrm_diag
-          ssh-keygen -y -f ~/.ssh/boomcrm_diag >/dev/null
+          if ! grep -qx -- '-----BEGIN OPENSSH PRIVATE KEY-----' <(head -n 1 ~/.ssh/boomcrm_diag) ||
+             ! grep -qx -- '-----END OPENSSH PRIVATE KEY-----' <(tail -n 1 ~/.ssh/boomcrm_diag); then
+            echo "::error::Secret is not a complete multiline OpenSSH private key. Update BOOMCRM_DIAG_SSH_KEY from the original private key file, preserving newlines."
+            exit 1
+          fi
+          if ! ssh-keygen -y -P '' -f ~/.ssh/boomcrm_diag >/dev/null 2>&1; then
+            echo "::error::OpenSSH private key could not be parsed (or is passphrase-protected). Re-copy the original key as multiline text; never paste it into chat."
+            exit 1
+          fi
+          echo "SSH key format: valid"
       - name: Verify server host key against pinned fingerprint
         run: |
           set -euo pipefail
