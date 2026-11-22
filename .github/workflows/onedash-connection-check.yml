@@ -37,6 +37,32 @@ jobs:
                           items=result.get('data',{}).get('items',[])
                           print('vps_list_access=ok')
                           print('vps_count='+str(len(items)))
+                          # Print only an allowlisted, non-sensitive status summary
+                          # for the target VPS. Never dump the full API response.
+                          target='89.125.121.183'
+                          matches=[]
+                          for item in items:
+                              if not isinstance(item,dict):
+                                  continue
+                              addresses=[str(item.get(k,'')) for k in ('ip','ip_address','ipv4','address','main_ip')]
+                              nested=item.get('ips')
+                              if isinstance(nested,list):
+                                  for entry in nested:
+                                      if isinstance(entry,str): addresses.append(entry)
+                                      elif isinstance(entry,dict):
+                                          addresses.extend(str(entry.get(k,'')) for k in ('ip','address','ipv4'))
+                              if any(target==addr for addr in addresses):
+                                  matches.append(item)
+                          print('target_vps_found='+str(bool(matches)).lower())
+                          if matches:
+                              item=matches[0]
+                              for key in ('status','state','power_state','is_running','is_active'):
+                                  value=item.get(key)
+                                  if isinstance(value,bool) or (isinstance(value,str) and value.lower() in ('running','stopped','active','inactive','online','offline','on','off','suspended','unknown')):
+                                      print('target_'+key+'='+str(value).lower())
+                              print('target_status_fields_present='+','.join(k for k in ('status','state','power_state','is_running','is_active') if k in item))
+                          else:
+                              print('target_match_note=API may use a different address field; no changes made')
               except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError,RuntimeError) as e:
                   print('api_'+endpoint.replace('/','_')+'=failed')
                   print('error_type='+type(e).__name__)
