@@ -113,6 +113,15 @@ jobs:
                                   print('target_connection_host_matches='+str(str(conn.get('host','')).strip()=='89.125.121.183').lower())
                                   port=conn.get('port')
                                   print('target_connection_port_is_22='+str(str(port).strip()=='22').lower())
+                                  # Only a valid TCP port number is safe to print.
+                                  try:
+                                      numeric_port=int(port)
+                                      if str(port).strip()==str(numeric_port) and 1<=numeric_port<=65535:
+                                          print('target_connection_port='+str(numeric_port))
+                                      else:
+                                          print('target_connection_port=unrecognized')
+                                  except (TypeError,ValueError):
+                                      print('target_connection_port=unrecognized')
                           else:
                               print('target_match_note=API may use a different address field; no changes made')
               except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError,RuntimeError) as e:
