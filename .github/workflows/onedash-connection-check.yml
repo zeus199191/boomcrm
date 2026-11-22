@@ -71,6 +71,24 @@ jobs:
                                               print('vps_'+str(idx)+'_'+key+'_item_fields='+','.join(sorted(str(k) for k in value[0].keys())))
                                       else:
                                           print('vps_'+str(idx)+'_'+key+'_value_type='+type(value).__name__)
+                          # OneDash often nests address information under connection.
+                          # Match the known VPS ID without logging any raw connection values.
+                          target_id='374527'
+                          for idx,item in enumerate(items):
+                              if not isinstance(item,dict):
+                                  continue
+                              conn=item.get('connection')
+                              if isinstance(conn,dict):
+                                  print('vps_'+str(idx)+'_connection_fields='+','.join(sorted(str(k) for k in conn.keys())))
+                              else:
+                                  print('vps_'+str(idx)+'_connection_type='+type(conn).__name__)
+                              if str(item.get('id',''))==target_id and item not in matches:
+                                  matches.append(item)
+                              if isinstance(conn,dict):
+                                  for k in ('ip','ip_address','ipv4','address','host','hostname','server_ip'):
+                                      v=conn.get(k)
+                                      if isinstance(v,str) and v.strip()=='89.125.121.183' and item not in matches:
+                                          matches.append(item)
                           print('target_vps_found='+str(bool(matches)).lower())
                           if matches:
                               item=matches[0]
