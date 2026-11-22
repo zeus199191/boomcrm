@@ -113,6 +113,16 @@ jobs:
                                   print('target_connection_host_matches='+str(str(conn.get('host','')).strip()=='89.125.121.183').lower())
                                   port=conn.get('port')
                                   print('target_connection_port_is_22='+str(str(port).strip()=='22').lower())
+                                  print('target_connection_port_type='+type(port).__name__)
+                                  if port is None:
+                                      print('target_connection_port_null=true')
+                                  elif isinstance(port,str):
+                                      print('target_connection_port_string_length='+str(len(port)))
+                                      print('target_connection_port_string_is_decimal='+str(port.strip().isdecimal()).lower())
+                                  elif isinstance(port,dict):
+                                      print('target_connection_port_object_fields='+','.join(sorted(str(k) for k in port.keys())))
+                                  elif isinstance(port,list):
+                                      print('target_connection_port_list_length='+str(len(port)))
                                   # Only a valid TCP port number is safe to print.
                                   try:
                                       numeric_port=int(port)
