@@ -97,6 +97,22 @@ jobs:
                                   if isinstance(value,bool) or (isinstance(value,str) and value.lower() in ('running','stopped','active','inactive','online','offline','on','off','suspended','unknown')):
                                       print('target_'+key+'='+str(value).lower())
                               print('target_status_fields_present='+','.join(k for k in ('status','state','power_state','is_running','is_active') if k in item))
+                              # OneDash may represent status as an integer or enum.
+                              # Output a safe normalized value, never arbitrary API text.
+                              raw=item.get('status')
+                              if isinstance(raw,bool):
+                                  print('target_status_value='+str(raw).lower())
+                              elif isinstance(raw,int) and 0<=raw<=20:
+                                  print('target_status_value='+str(raw))
+                              elif isinstance(raw,str) and raw.strip().lower() in ('running','stopped','active','inactive','online','offline','on','off','suspended','unknown','enabled','disabled','started','starting','stopping','pending'):
+                                  print('target_status_value='+raw.strip().lower())
+                              else:
+                                  print('target_status_value_type='+type(raw).__name__)
+                              conn=item.get('connection')
+                              if isinstance(conn,dict):
+                                  print('target_connection_host_matches='+str(str(conn.get('host','')).strip()=='89.125.121.183').lower())
+                                  port=conn.get('port')
+                                  print('target_connection_port_is_22='+str(str(port).strip()=='22').lower())
                           else:
                               print('target_match_note=API may use a different address field; no changes made')
               except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,ValueError,RuntimeError) as e:
