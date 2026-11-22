@@ -53,6 +53,24 @@ jobs:
                                           addresses.extend(str(entry.get(k,'')) for k in ('ip','address','ipv4'))
                               if any(target==addr for addr in addresses):
                                   matches.append(item)
+                          # Show field names and safe shape hints only; never print values
+                          # that might contain credentials, access URLs or tokens.
+                          for idx,item in enumerate(items):
+                              if not isinstance(item,dict):
+                                  print('vps_'+str(idx)+'_record_type='+type(item).__name__)
+                                  continue
+                              print('vps_'+str(idx)+'_field_names='+','.join(sorted(str(k) for k in item.keys())))
+                              for key in ('ip','ip_address','ipv4','address','main_ip','ips','network','networking','addresses'):
+                                  if key in item:
+                                      value=item[key]
+                                      if isinstance(value,dict):
+                                          print('vps_'+str(idx)+'_'+key+'_subfields='+','.join(sorted(str(k) for k in value.keys())))
+                                      elif isinstance(value,list):
+                                          print('vps_'+str(idx)+'_'+key+'_list_length='+str(len(value)))
+                                          if value and isinstance(value[0],dict):
+                                              print('vps_'+str(idx)+'_'+key+'_item_fields='+','.join(sorted(str(k) for k in value[0].keys())))
+                                      else:
+                                          print('vps_'+str(idx)+'_'+key+'_value_type='+type(value).__name__)
                           print('target_vps_found='+str(bool(matches)).lower())
                           if matches:
                               item=matches[0]
