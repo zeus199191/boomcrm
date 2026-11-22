@@ -13,6 +13,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Probe SSH banner from GitHub runner (no authentication)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import socket, time
+          host='89.125.121.183'
+          port=22
+          start=time.monotonic()
+          try:
+              with socket.create_connection((host,port),timeout=8) as sock:
+                  print('ssh_tcp_connect=ok')
+                  sock.settimeout(8)
+                  try:
+                      data=sock.recv(256)
+                      if not data:
+                          print('ssh_banner=connection_closed_without_banner')
+                      elif data.startswith(b'SSH-'):
+                          line=data.split(b'\\n',1)[0].strip()
+                          print('ssh_banner=valid')
+                          print('ssh_protocol_version='+line.split(b'-',2)[1].decode('ascii','replace')[:12])
+                      else:
+                          print('ssh_banner=unexpected_non_ssh_response')
+                  except socket.timeout:
+                      print('ssh_banner=timeout')
+                  except (ConnectionResetError, OSError) as exc:
+                      print('ssh_banner=socket_error')
+                      print('ssh_error_type='+type(exc).__name__)
+          except (socket.timeout, OSError) as exc:
+              print('ssh_tcp_connect=failed')
+              print('ssh_error_type='+type(exc).__name__)
+          print('ssh_probe_elapsed_seconds='+str(round(time.monotonic()-start,1)))
+          PY
       - name: Check API authorization without exposing credentials
         env:
           ONEDASH_API_KEY: ${{ secrets.ONEDASH_API_KEY }}
