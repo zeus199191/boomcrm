@@ -109,7 +109,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname.startsWith('/brand-logo/') && require('./lib/brands').serve(req, res, pathname)) return;
     if (req.method === 'GET' && pathname.startsWith('/works-media/') && require('./lib/pubs').serve(req, res, pathname)) return;
     // страницы сайта: каждый раздел — отдельная страница
-    const SITE_PAGES = { '/uslugi': 'services', '/avtozvuk': 'sound', '/signalizacii': 'alarms', '/raboty': 'works', '/otzyvy': 'reviews', '/kontakty': 'contacts' };
+    const SITE_PAGES = { '/uslugi': 'services', '/avtozvuk': 'sound', '/bs-harmonix': 'harmonix', '/signalizacii': 'alarms', '/raboty': 'works', '/otzyvy': 'reviews', '/kontakty': 'contacts' };
     const sp = SITE_PAGES[pathname.replace(/\/+$/, '')];
     if (req.method === 'GET' && sp) {
       if (get("SELECT value FROM settings WHERE key='landing_on'")?.value === '0') { res.writeHead(302, { Location: '/crm' }); return res.end(); }
